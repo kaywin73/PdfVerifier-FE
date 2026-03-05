@@ -1,0 +1,362 @@
+﻿cargo.exe :     Checking pdfverifier-fe v0.1.0 
+(C:\Project\PdfVerifier-FE)
+At line:1 char:1
++ & "$env:USERPROFILE\.cargo\bin\cargo" check 
+2>&1 > stderr.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    
+    Checking pd...PdfVerifier-FE):String) [], R  
+  emoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+error[E0432]: unresolved import 
+`cms::signer_info`
+ --> src\hashing.rs:3:10
+  |
+3 | use cms::signer_info::SignerIdentifier;
+  |          ^^^^^^^^^^^ could not find 
+`signer_info` in `cms`
+
+warning: unused import: 
+`std::collections::HashMap`
+ --> src\hashing.rs:7:5
+  |
+7 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of 
+`#[warn(unused)]`) on by default
+
+error[E0308]: mismatched types
+  --> src\parser.rs:68:47
+   |
+68 | ...                   .and_then(|n| 
+n.as_str().ok())
+   |                                     
+^^^^^^^^^^^^^^^ expected `Result<_, Error>`, 
+found `Option<&[u8]>`
+   |
+   = note: expected enum `Result<_, 
+lopdf::Error>`
+              found enum 
+`std::option::Option<&[u8]>`
+help: try wrapping the expression in `Ok`
+   |
+68 |                                 
+.and_then(|n| Ok(n.as_str().ok()))
+   |                                             
+  +++               +
+
+error[E0277]: the `?` operator can only be used 
+on `Result`s, not `Option`s, in a closure that 
+returns `Result`
+  --> src\parser.rs:93:108
+   |
+93 | ... = root.get(b"DSS").and_then(|obj| doc.ge
+t_object(obj.as_reference().unwrap_or((0,0))).ok(
+)?.as_dict().ok()).or_else(|| root.get(b"DSS...
+   |                                 ----- this 
+function returns a `Result`                      
+  ^ use `.ok_or(...)?` to provide an error 
+compatible with `Result<_, lopdf::Error>`
+
+error[E0308]: mismatched types
+  --> src\parser.rs:93:52
+   |
+93 | ...t(b"DSS").and_then(|obj| doc.get_object(o
+bj.as_reference().unwrap_or((0,0))).ok()?.as_dict
+().ok()).or_else(|| root.get(b"DSS").and_the...
+   |                             ^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^ expected `Result<_, Error>`, found 
+`Option<&Dictionary>`
+   |
+   = note: expected enum `Result<_, 
+lopdf::Error>`
+              found enum 
+`std::option::Option<&lopdf::Dictionary>`
+note: return type inferred to be `Result<_, 
+lopdf::Error>` here
+  --> src\parser.rs:93:52
+   |
+93 |     let dss_dict = 
+root.get(b"DSS").and_then(|obj| doc.get_object(ob
+j.as_reference().unwrap_or((0,0))).ok()?.as_dict(
+).ok()).or_else(|| r...
+   |                                             
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
+help: try wrapping the expression in `Ok`
+   |
+93 |     let dss_dict = 
+root.get(b"DSS").and_then(|obj| Ok(doc.get_object
+(obj.as_reference().unwrap_or((0,0))).ok()?.as_di
+ct().ok())).or_else(|| 
+root.get(b"DSS").and_then(|obj| 
+obj.as_dict().ok()))?;
+   |                                             
+       +++                                       
+                                 +
+
+error[E0593]: closure is expected to take 1 
+argument, but it takes 0 arguments
+  --> src\parser.rs:93:126
+   |
+93 | ...e().unwrap_or((0,0))).ok()?.as_dict().ok(
+)).or_else(|| root.get(b"DSS").and_then(|obj| 
+obj.as_dict().ok()))?;
+   |                                             
+   ^^^^^^^ -- takes 0 arguments
+   |                                             
+   |
+   |                                             
+   expected closure that takes 1 argument
+   |
+help: consider changing the closure to take and 
+ignore the expected argument
+   |
+93 |     let dss_dict = 
+root.get(b"DSS").and_then(|obj| doc.get_object(ob
+j.as_reference().unwrap_or((0,0))).ok()?.as_dict(
+).ok()).or_else(|_| 
+root.get(b"DSS").and_then(|obj| 
+obj.as_dict().ok()))?;
+   |                                             
+                                                 
+                                         +
+
+error[E0308]: mismatched types
+  --> src\parser.rs:93:169
+   |
+93 | ...t.get(b"DSS").and_then(|obj| 
+obj.as_dict().ok()))?;
+   |                                 
+^^^^^^^^^^^^^^^^^^ expected `Result<_, Error>`, 
+found `Option<&Dictionary>`
+   |
+   = note: expected enum `Result<_, 
+lopdf::Error>`
+              found enum 
+`std::option::Option<&lopdf::Dictionary>`
+help: try wrapping the expression in `Ok`
+   |
+93 |     let dss_dict = 
+root.get(b"DSS").and_then(|obj| doc.get_object(ob
+j.as_reference().unwrap_or((0,0))).ok()?.as_dict(
+).ok()).or_else(|| 
+root.get(b"DSS").and_then(|obj| 
+Ok(obj.as_dict().ok())))?;
+   |                                             
+                                                 
+                                                 
+                          +++                  +
+
+error[E0277]: the `?` operator can only be used 
+on `Option`s, not `Result`s, in a function that 
+returns `Option`
+  --> src\parser.rs:93:189
+   |
+91 | fn extract_dss(doc: &Document) -> 
+Option<DssData> {
+   | --------------------------------------------
+----- this function returns an `Option`
+92 |     let root = doc.catalog().ok()?;
+93 |     let dss_dict = 
+root.get(b"DSS").and_then(|obj| doc.get_object(ob
+j.as_reference().unwrap_or((0,0))).ok()?.as_dict(
+).ok()).or_else(|| 
+root.get(b"DSS").and_then(|obj| 
+obj.as_dict().ok()))?;
+   |                                             
+                                                 
+                                                 
+                                              ^ 
+use `.ok()?` if you want to discard the 
+`Result<Infallible, _>` error information
+
+error[E0282]: type annotations needed
+  --> src\parser.rs:93:9
+   |
+93 |     let dss_dict = 
+root.get(b"DSS").and_then(|obj| doc.get_object(ob
+j.as_reference().unwrap_or((0,0))).ok()?.as_dict(
+).ok()).or_else(|| r...
+   |         ^^^^^^^^
+...
+99 |     if let Ok(Object::Array(certs_array)) = 
+dss_dict.get(b"Certs") {
+   |                                             
+-------- type must be known at this point
+   |
+help: consider giving `dss_dict` an explicit type
+   |
+93 |     let dss_dict: /* Type */ = 
+root.get(b"DSS").and_then(|obj| doc.get_object(ob
+j.as_reference().unwrap_or((0,0))).ok()?.as_dict(
+).ok()).or_else(|| 
+root.get(b"DSS").and_then(|obj| 
+obj.as_dict().ok()))?;
+   |                 ++++++++++++
+
+error[E0308]: mismatched types
+   --> src\parser.rs:101:63
+    |
+101 |             if let Some(stream_bytes) = 
+get_stream_bytes(doc, obj_ref) {
+    |                                         
+----------------      ^^^^^^^ expected 
+`&Object`, found `Object`
+    |                                         |
+    |                                         
+arguments to this function are incorrect
+    |
+note: function defined here
+   --> src\parser.rs:130:4
+    |
+130 | fn get_stream_bytes(doc: &Document, obj: 
+&Object) -> Option<Vec<u8>> {
+    |    ^^^^^^^^^^^^^^^^                 
+------------
+help: consider borrowing here
+    |
+101 |             if let Some(stream_bytes) = 
+get_stream_bytes(doc, &obj_ref) {
+    |                                            
+                   +
+
+error[E0308]: mismatched types
+   --> src\parser.rs:109:63
+    |
+109 |             if let Some(stream_bytes) = 
+get_stream_bytes(doc, obj_ref) {
+    |                                         
+----------------      ^^^^^^^ expected 
+`&Object`, found `Object`
+    |                                         |
+    |                                         
+arguments to this function are incorrect
+    |
+note: function defined here
+   --> src\parser.rs:130:4
+    |
+130 | fn get_stream_bytes(doc: &Document, obj: 
+&Object) -> Option<Vec<u8>> {
+    |    ^^^^^^^^^^^^^^^^                 
+------------
+help: consider borrowing here
+    |
+109 |             if let Some(stream_bytes) = 
+get_stream_bytes(doc, &obj_ref) {
+    |                                            
+                   +
+
+error[E0308]: mismatched types
+   --> src\parser.rs:117:63
+    |
+117 |             if let Some(stream_bytes) = 
+get_stream_bytes(doc, obj_ref) {
+    |                                         
+----------------      ^^^^^^^ expected 
+`&Object`, found `Object`
+    |                                         |
+    |                                         
+arguments to this function are incorrect
+    |
+note: function defined here
+   --> src\parser.rs:130:4
+    |
+130 | fn get_stream_bytes(doc: &Document, obj: 
+&Object) -> Option<Vec<u8>> {
+    |    ^^^^^^^^^^^^^^^^                 
+------------
+help: consider borrowing here
+    |
+117 |             if let Some(stream_bytes) = 
+get_stream_bytes(doc, &obj_ref) {
+    |                                            
+                   +
+
+error[E0599]: no method named `ok` found for 
+struct `Vec<u8>` in the current scope
+   --> src\parser.rs:133:28
+    |
+133 |     stream.content.clone().ok()
+    |                            ^^ method not 
+found in `Vec<u8>`
+
+error[E0599]: no method named `as_integer` found 
+for reference `&lopdf::Object` in the current 
+scope
+   --> src\parser.rs:143:72
+    |
+143 |                         if let Ok(p) = 
+params.get(b"P").and_then(|o| o.as_integer()) {
+    |                                            
+                            ^^^^^^^^^^
+    |
+help: there is a method `as_str` with a similar 
+name
+    |
+143 -                         if let Ok(p) = 
+params.get(b"P").and_then(|o| o.as_integer()) {
+143 +                         if let Ok(p) = 
+params.get(b"P").and_then(|o| o.as_str()) {
+    |
+
+error[E0599]: no method named `to_der` found for 
+struct `der::Any` in the current scope
+  --> src\hashing.rs:32:44
+   |
+32 |     let any_content = 
+content_info.content.to_der().map_err(|e| 
+format!("ASN.1 DER encode error (inner): {:?}", 
+e))?;
+   |                                            
+^^^^^^ method not found in `der::Any`
+   |
+  ::: C:\Users\Kay Win\.cargo\registry\src\index.
+crates.io-1949cf8c6b5b557f\der-0.7.10\src\encode.
+rs:62:8
+   |
+62 |     fn to_der(&self) -> Result<Vec<u8>> {
+   |        ------ the method is available for 
+`der::Any` here
+   |
+   = help: items from traits can only be used if 
+the trait is in scope
+help: trait `Encode` which provides `to_der` is 
+implemented but not in scope; perhaps you want 
+to import it
+   |
+ 1 + use der::Encode;
+   |
+
+error[E0609]: no field `0` on type 
+`&SetOfVec<Attribute>`
+  --> src\hashing.rs:54:38
+   |
+54 |             for attr in 
+signed_attrs.0.iter() {
+   |                                      ^ 
+unknown field
+
+error[E0282]: type annotations needed
+  --> src\hashing.rs:58:56
+   |
+58 | ...   let digest_from_cms: Vec<u8> = attr_an
+y.decode_as::<der::asn1::OctetString>().map_err(|
+e| format!("ASN.1 decode error (messageDiges...
+   |                                      
+^^^^^^^^ cannot infer type
+
+Some errors have detailed explanations: E0277, 
+E0282, E0308, E0432, E0593, E0599, E0609.
+For more information about an error, try `rustc 
+--explain E0277`.
+warning: `pdfverifier-fe` (bin "pdfverifier-fe") 
+generated 1 warning
+error: could not compile `pdfverifier-fe` (bin 
+"pdfverifier-fe") due to 16 previous errors; 1 
+warning emitted
+
