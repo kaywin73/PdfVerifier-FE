@@ -1,7 +1,4 @@
 use lopdf::{Document, Object, Dictionary};
-use std::fs::File;
-use std::io::Read;
-use std::path::Path;
 
 #[derive(Debug)]
 pub struct ExtractedSignature {
@@ -23,12 +20,8 @@ pub struct ExtractionResult {
     pub dss: Option<DssData>,
 }
 
-pub fn extract_signatures<P: AsRef<Path>>(pdf_path: P) -> Result<ExtractionResult, Box<dyn std::error::Error>> {
-    let mut file = File::open(pdf_path.as_ref())?;
-    let mut raw_bytes = Vec::new();
-    file.read_to_end(&mut raw_bytes)?;
-
-    let doc = Document::load_mem(&raw_bytes).map_err(|e| format!("PDF parse error: {:?}", e))?;
+pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn std::error::Error>> {
+    let doc = Document::load_mem(raw_bytes).map_err(|e| format!("PDF parse error: {:?}", e))?;
     let mut signatures = Vec::new();
 
     let dss = extract_dss(&doc);
