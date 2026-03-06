@@ -18,6 +18,7 @@ pub struct DssData {
 pub struct ExtractionResult {
     pub signatures: Vec<ExtractedSignature>,
     pub dss: Option<DssData>,
+    pub doc_mdp_permission: Option<i32>,
 }
 
 pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn std::error::Error>> {
@@ -25,6 +26,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
     let mut signatures = Vec::new();
 
     let dss = extract_dss(&doc);
+    let doc_mdp_permission = extract_doc_mdp_permission(&doc);
 
     for object in doc.objects.values() {
         if let Object::Dictionary(dict) = object {
@@ -73,7 +75,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
         }
     }
 
-    Ok(ExtractionResult { signatures, dss })
+    Ok(ExtractionResult { signatures, dss, doc_mdp_permission })
 }
 
 fn extract_dss(doc: &Document) -> Option<DssData> {
@@ -147,4 +149,26 @@ fn extract_mdp_permission(_doc: &Document, sig_dict: &Dictionary) -> Option<i32>
         }
     }
     None
+}
+
+fn extract_doc_mdp_permission(doc: &Document) -> Option<i32> {
+    let root = doc.catalog().ok()?;
+    
+    // Catalog -> /Perms
+    let perms_obj = root.get(b"Perms").ok()?;
+    let perms_dict = match perms_obj {
+        Object::Dictionary(dict) => Some(dict),
+        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok(),
+        _ => None,
+    }?;
+
+    // Perms -> /DocMDP
+    let doc_mdp_sig_ref = perms_dict.get(b"DocMDP").ok()?;
+    let doc_mdp_sig_dict = match doc_mdp_sig_ref {
+        Object::Dictionary(dict) => Some(dict),
+        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok(),
+        _ => None,
+    }?;
+
+    extract_mdp_permission(doc, doc_mdp_sig_dict)
 }

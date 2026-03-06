@@ -27,6 +27,7 @@ pub struct DssPayload {
 pub struct VerifyRequest {
     pub signers: Vec<SignerPayload>,
     pub dss: Option<DssPayload>,
+    pub doc_mdp_permission: Option<i32>,
 }
 
 #[wasm_bindgen]
@@ -64,6 +65,7 @@ pub fn parse_pdf(ptr: *const u8, len: usize) -> Result<String, JsValue> {
     let mut request_payload = VerifyRequest {
         signers: Vec::new(),
         dss: dss_payload,
+        doc_mdp_permission: extraction_result.doc_mdp_permission,
     };
 
     for sig in extraction_result.signatures {
@@ -83,5 +85,7 @@ pub fn parse_pdf(ptr: *const u8, len: usize) -> Result<String, JsValue> {
         }
     }
 
-    serde_json::to_string(&request_payload).map_err(|e| JsValue::from_str(&e.to_string()))
+    let json = serde_json::to_string(&request_payload).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    web_sys::console::log_1(&JsValue::from_str(&format!("Wasm Output: {}", json)));
+    Ok(json)
 }
