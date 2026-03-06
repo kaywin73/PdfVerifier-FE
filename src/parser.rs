@@ -6,6 +6,8 @@ pub struct ExtractedSignature {
     pub cms_bytes: Vec<u8>,
     pub signed_content: Vec<u8>,
     pub mdp_permission: Option<i32>,
+    pub signature_type: String,
+    pub sub_filter: Option<String>,
 }
 
 #[derive(Debug)]
@@ -31,7 +33,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
     for object in doc.objects.values() {
         if let Object::Dictionary(dict) = object {
             let type_name = dict.get(b"Type").and_then(|o| o.as_name()).unwrap_or(&[][..]);
-            let is_sig = type_name == b"Sig";
+            let is_sig = type_name == b"Sig" || type_name == b"DocTimeStamp";
             
             if is_sig {
                 if let Ok(Object::Array(byte_range_array)) = dict.get(b"ByteRange") {
@@ -60,6 +62,12 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 Err(_) => "Unknown".to_string(),
                             };
 
+                            let signature_type = String::from_utf8_lossy(type_name).into_owned();
+                            let sub_filter = dict.get(b"SubFilter")
+                                .and_then(|o| o.as_name())
+                                .ok()
+                                .map(|n| String::from_utf8_lossy(n).into_owned());
+
                             let mdp_permission = extract_mdp_permission(&doc, dict);
 
                             signatures.push(ExtractedSignature {
@@ -67,6 +75,8 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 cms_bytes,
                                 signed_content,
                                 mdp_permission,
+                                signature_type,
+                                sub_filter,
                             });
                         }
                     }

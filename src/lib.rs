@@ -14,6 +14,8 @@ pub struct SignerPayload {
     pub hash_algorithm_oid: String,
     pub mdp_permission: Option<i32>,
     pub is_integrity_ok: bool,
+    pub signature_type: String,
+    pub sub_filter: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,6 +82,8 @@ pub fn parse_pdf(ptr: *const u8, len: usize) -> Result<String, JsValue> {
                 hash_algorithm_oid: signer_hash.digest_alg_oid,
                 mdp_permission: sig.mdp_permission,
                 is_integrity_ok: signer_hash.is_integrity_ok,
+                signature_type: sig.signature_type.clone(),
+                sub_filter: sig.sub_filter.clone(),
             };
             request_payload.signers.push(payload);
         }
