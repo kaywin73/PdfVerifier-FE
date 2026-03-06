@@ -13,7 +13,6 @@ pub fn convert_ber_to_der(ber_bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::erro
 }
 
 fn rec_to_der(any: &Any) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    println!("Tag: {:?}, Const: {}, Len: {:?}", any.header.tag(), any.header.is_constructed(), any.header.length());
     if any.header.is_constructed() {
         let mut children_der: Vec<Vec<u8>> = Vec::new();
         let mut remaining = any.data;

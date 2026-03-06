@@ -33,7 +33,7 @@ pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result
     let trimmed_cms_bytes = &cms_bytes[..end];
     
     // Debug info
-    println!("CMS bytes length: {}, Trimmed: {}", cms_bytes.len(), trimmed_cms_bytes.len());
+    eprintln!("CMS bytes length: {}, Trimmed: {}", cms_bytes.len(), trimmed_cms_bytes.len());
 
     let mut cms_der_buffer = Vec::new();
     let content_info_res = ContentInfo::from_der(trimmed_cms_bytes);
@@ -41,9 +41,9 @@ pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result
     let content_info = match content_info_res {
         Ok(ci) => ci,
         Err(e) => {
-            println!("Initial DER decode failed: {:?}. Attempting BER-to-DER fallback...", e);
+            eprintln!("Initial DER decode failed: {:?}. Attempting BER-to-DER fallback...", e);
             cms_der_buffer = crate::ber_util::convert_ber_to_der(cms_bytes)?;
-            println!("BER-to-DER successful, new length: {}", cms_der_buffer.len());
+            eprintln!("BER-to-DER successful, new length: {}", cms_der_buffer.len());
             std::fs::write("original_ber.bin", cms_bytes).unwrap_or(());
             std::fs::write("converted_der.bin", &cms_der_buffer).unwrap_or(());
             ContentInfo::from_der(&cms_der_buffer)

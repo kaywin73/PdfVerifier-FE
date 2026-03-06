@@ -7,7 +7,7 @@ use base64::{engine::general_purpose, Engine as _};
 use std::env;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <pdf_path> [backend_url]", args[0]);
@@ -17,12 +17,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pdf_path = &args[1];
     let backend_url = args.get(2).cloned();
 
-    println!("Parsing PDF: {}", pdf_path);
+    match run(pdf_path, backend_url).await {
+        Ok(request_payload) => {
+            let wrapper = serde_json::json!({
+                "status": 0,
+                "content": request_payload
+            });
+            let json_output = serde_json::to_string_pretty(&wrapper).unwrap();
+            println!("{}", json_output);
+        }
+        Err(e) => {
+            let wrapper = serde_json::json!({
+                "status": 1,
+                "error": e.to_string()
+            });
+            let json_output = serde_json::to_string_pretty(&wrapper).unwrap();
+            println!("{}", json_output);
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn run(pdf_path: &str, backend_url: Option<String>) -> Result<client::VerifyRequest, Box<dyn std::error::Error>> {
+    eprintln!("Parsing PDF: {}", pdf_path);
     let extraction_result = parser::extract_signatures(pdf_path)?;
 
     if extraction_result.signatures.is_empty() {
-        println!("No signatures found in the document.");
-        return Ok(());
+        eprintln!("No signatures found in the document.");
+        return Ok(client::VerifyRequest {
+            signers: Vec::new(),
+            dss: None,
+        });
     }
 
     let dss_payload = extraction_result.dss.map(|dss| client::DssPayload {
@@ -37,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for sig in extraction_result.signatures {
-        println!("Found signature: {}", sig.name);
+        eprintln!("Found signature: {}", sig.name);
         
         let signer_hashes = hashing::compute_hashes_for_cms(&sig.cms_bytes, &sig.signed_content)?;
 
@@ -55,15 +80,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(url) = backend_url {
-        println!("Sending verification request to backend...");
+        eprintln!("Sending verification request to backend...");
         let response = client::verify_signatures(&url, &request_payload).await?;
-        
-        println!("Verification response:\n{}", response);
-    } else {
-        println!("No backend URL specified. Printing payload JSON for debugging:\n");
-        let json_output = serde_json::to_string_pretty(&request_payload)?;
-        println!("{}", json_output);
+        eprintln!("Verification response:\n{}", response);
     }
 
-    Ok(())
+    Ok(request_payload)
 }
