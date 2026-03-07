@@ -1,2 +1,11 @@
-/misc
-/target
+target/
+build/
+bin/
+out/
+misc/
+storage/
+.gradle/
+.mvn/
+
+.txt
+.log
