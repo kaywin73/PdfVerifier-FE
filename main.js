@@ -84,6 +84,7 @@ async function processFile(file) {
         let formattedOutput;
         try {
             const parsed = JSON.parse(resultJson);
+            console.log("Parsed Wasm Output:", parsed);
             updateStatus("Success", "success");
             renderSignatureUi(parsed);
         } catch (e) {
@@ -139,7 +140,7 @@ function renderSignatureUi(data) {
     panel.appendChild(topStatus);
 
     // Render each CMS signature
-    const signatures = data.signatures || [];
+    const signatures = data.signatures || data.signers || [];
     signatures.forEach((sig, index) => {
         const sigItem = document.createElement('div');
         sigItem.className = 'signature-item';
@@ -183,6 +184,26 @@ function renderSignatureUi(data) {
         details.appendChild(p2);
         details.appendChild(p3);
         if (claimedTime) details.appendChild(p4);
+
+        if (sig.locked_fields) {
+            const pLock = document.createElement('p');
+            let text = "Document Locked by signature.";
+            if (sig.locked_fields.action === "Include") {
+                text = `Locks specific fields: ${sig.locked_fields.fields.join(", ")}`;
+            } else if (sig.locked_fields.action === "Exclude") {
+                text = `Locks all fields except: ${sig.locked_fields.fields.join(", ")}`;
+            } else {
+                text = "Locks all form fields.";
+            }
+            pLock.innerHTML = `<strong>Document Locked:</strong> ${text}`;
+            details.appendChild(pLock);
+        }
+
+        if (sig.filled_fields && sig.filled_fields.length > 0) {
+            const pFilled = document.createElement('p');
+            pFilled.innerHTML = `<strong>Form fields filled in:</strong> ${sig.filled_fields.join(", ")}`;
+            details.appendChild(pFilled);
+        }
 
         // Nested Signature Details block
         const toggleDetails = document.createElement('a');

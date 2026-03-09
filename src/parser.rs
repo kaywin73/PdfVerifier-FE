@@ -8,6 +8,23 @@ pub struct ExtractedSignature {
     pub mdp_permission: Option<i32>,
     pub signature_type: String,
     pub sub_filter: Option<String>,
+    pub locked_fields: Option<FieldLock>,
+    pub filled_fields: Vec<String>,
+    pub revision_index: u32,
+    pub byte_range_start: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LockAction {
+    All,
+    Include,
+    Exclude,
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldLock {
+    pub action: LockAction,
+    pub fields: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -29,6 +46,28 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
 
     let dss = extract_dss(&doc);
     let doc_mdp_permission = extract_doc_mdp_permission(&doc);
+
+    let mut annot_to_page = std::collections::HashMap::new();
+    let pages = doc.get_pages();
+    for (page_num, page_id) in pages {
+        if let Ok(Object::Dictionary(page_dict)) = doc.get_object(page_id) {
+            if let Ok(Object::Array(annots)) = page_dict.get(b"Annots") {
+                for annot_ref in annots {
+                    if let Ok(id) = annot_ref.as_reference() {
+                        annot_to_page.insert(id, page_num);
+                    }
+                }
+            } else if let Ok(Object::Reference(annots_id)) = page_dict.get(b"Annots") {
+                if let Ok(annots) = doc.get_object(*annots_id).and_then(|o| o.as_array()) {
+                    for annot_ref in annots {
+                        if let Ok(id) = annot_ref.as_reference() {
+                            annot_to_page.insert(id, page_num);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     for object in doc.objects.values() {
         if let Object::Dictionary(dict) = object {
@@ -69,6 +108,107 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 .map(|n| String::from_utf8_lossy(n).into_owned());
 
                             let mdp_permission = extract_mdp_permission(&doc, dict);
+                            
+                            // 1. Try FieldMDP transform first
+                            let mut locked_fields = extract_field_mdp_lock(dict);
+                            
+                            let mut sig_obj_id = None;
+                            for (id, obj) in &doc.objects {
+                                if let Object::Dictionary(d) = obj {
+                                    let v_dict_opt = match d.get(b"V") {
+                                        Ok(Object::Reference(ref_id)) => doc.get_object(*ref_id).ok().and_then(|o| o.as_dict().ok()),
+                                        Ok(Object::Dictionary(dict)) => Some(dict),
+                                        _ => None,
+                                    };
+                                    if let Some(v_dict) = v_dict_opt {
+                                        if let Ok(Object::Array(vr)) = v_dict.get(b"ByteRange") {
+                                            let is_match = vr.iter().enumerate().all(|(i, val)| {
+                                                if let Object::Integer(v) = val {
+                                                    byte_range.get(i).map_or(false, |&b| b == *v as usize)
+                                                } else {
+                                                    false
+                                                }
+                                            });
+                                            if is_match {
+                                                sig_obj_id = Some(*id);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 2. If no FieldMDP, try parent signature field's /Lock dictionary
+                            if locked_fields.is_none() {
+                                if let Some(id) = sig_obj_id {
+                                    if let Some(parent_dict) = doc.get_object(id).ok().and_then(|o| o.as_dict().ok()) {
+                                        locked_fields = extract_lock_dict(parent_dict);
+                                    }
+                                }
+                            }
+
+                            // 3. Extract filled fields
+                            let mut filled_fields = Vec::new();
+                            let incremental_end = offset2 + len2;
+                            let mut eofs_found = 0;
+                            let mut incremental_start = 0;
+                            let eof_marker = b"%%EOF";
+                            
+                            let mut i = incremental_end.saturating_sub(eof_marker.len());
+                            while i > 0 {
+                                if &raw_bytes[i..i + eof_marker.len()] == eof_marker {
+                                    eofs_found += 1;
+                                    if eofs_found == 2 {
+                                        incremental_start = i + eof_marker.len();
+                                        break;
+                                    }
+                                }
+                                i -= 1;
+                            }
+
+                            let update_bytes = if incremental_start < incremental_end && incremental_end <= raw_bytes.len() {
+                                &raw_bytes[incremental_start..incremental_end]
+                            } else {
+                                &[]
+                            };
+
+                            for (id, obj) in &doc.objects {
+                                if let Object::Dictionary(f_dict) = obj {
+                                    if let Some(s_id) = sig_obj_id {
+                                        if *id == s_id {
+                                            continue;
+                                        }
+                                    }
+
+                                    if let Ok(t_obj) = f_dict.get(b"T") {
+                                        let obj_marker = format!("{} {} obj", id.0, id.1);
+                                        let marker_bytes = obj_marker.as_bytes();
+                                        
+                                        let is_modified = update_bytes.windows(marker_bytes.len()).any(|w| w == marker_bytes);
+                                        
+                                        if is_modified {
+                                            let is_sig_field = f_dict.get(b"FT").and_then(|o| o.as_name()).map(|n| n == b"Sig").unwrap_or(false);
+                                            if !is_sig_field {
+                                                let field_name = match t_obj {
+                                                    Object::String(s, _) => String::from_utf8_lossy(s).into_owned(),
+                                                    _ => "Unknown".to_string(),
+                                                };
+                                                
+                                                let page_info = if let Some(page_num) = annot_to_page.get(id) {
+                                                    format!(" on page {}", page_num)
+                                                } else {
+                                                    "".to_string()
+                                                };
+                                                
+                                                filled_fields.push(format!("Field {}{}", field_name, page_info));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 4. Record the byte range start for chronological sorting later
+                            let byte_range_start = len1;
 
                             signatures.push(ExtractedSignature {
                                 name,
@@ -77,12 +217,22 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 mdp_permission,
                                 signature_type,
                                 sub_filter,
+                                locked_fields,
+                                filled_fields,
+                                revision_index: 0,
+                                byte_range_start,
                             });
                         }
                     }
                 }
             }
         }
+    }
+
+    // Assign revision indices based on the chronological order of the signatures in the file
+    signatures.sort_by_key(|s| s.byte_range_start);
+    for (i, sig) in signatures.iter_mut().enumerate() {
+        sig.revision_index = (i + 1) as u32;
     }
 
     Ok(ExtractionResult { signatures, dss, doc_mdp_permission })
@@ -181,4 +331,62 @@ fn extract_doc_mdp_permission(doc: &Document) -> Option<i32> {
     }?;
 
     extract_mdp_permission(doc, doc_mdp_sig_dict)
+}
+
+fn extract_lock_dict(field_dict: &Dictionary) -> Option<FieldLock> {
+    if let Ok(Object::Dictionary(lock_dict)) = field_dict.get(b"Lock") {
+        let action = match lock_dict.get(b"Action").and_then(|o| o.as_name()) {
+            Ok(b"All") => LockAction::All,
+            Ok(b"Include") => LockAction::Include,
+            Ok(b"Exclude") => LockAction::Exclude,
+            _ => LockAction::All,
+        };
+        
+        let mut fields = Vec::new();
+        if let Ok(Object::Array(fields_array)) = lock_dict.get(b"Fields") {
+            for f in fields_array {
+                if let Ok(s) = f.as_str() {
+                    fields.push(String::from_utf8_lossy(s).into_owned());
+                }
+            }
+        }
+        return Some(FieldLock { action, fields });
+    }
+    None
+}
+
+fn extract_field_mdp_lock(sig_dict: &Dictionary) -> Option<FieldLock> {
+    if let Ok(Object::Array(ref_array)) = sig_dict.get(b"Reference") {
+        for ref_obj in ref_array {
+            if let Ok(ref_dict) = ref_obj.as_dict() {
+                let is_field_mdp = match ref_dict.get(b"TransformMethod").and_then(|o| o.as_name()) {
+                    Ok(n) => n == b"FieldMDP",
+                    Err(_) => false,
+                };
+                
+                if is_field_mdp {
+                    if let Ok(params) = ref_dict.get(b"TransformParams").and_then(|o| o.as_dict()) {
+                        let action = match params.get(b"Action").and_then(|o| o.as_name()) {
+                            Ok(b"All") => LockAction::All,
+                            Ok(b"Include") => LockAction::Include,
+                            Ok(b"Exclude") => LockAction::Exclude,
+                            _ => LockAction::All,
+                        };
+                        
+                        let mut fields = Vec::new();
+                        if let Ok(Object::Array(fields_array)) = params.get(b"Fields") {
+                            for f in fields_array {
+                                if let Ok(s) = f.as_str() {
+                                    fields.push(String::from_utf8_lossy(s).into_owned());
+                                }
+                            }
+                        }
+                        
+                        return Some(FieldLock { action, fields });
+                    }
+                }
+            }
+        }
+    }
+    None
 }

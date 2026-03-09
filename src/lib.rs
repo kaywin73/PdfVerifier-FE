@@ -7,6 +7,12 @@ pub mod hashing;
 pub mod ber_util;
 
 #[derive(Serialize, Deserialize)]
+pub struct FieldLockPayload {
+    pub action: String,
+    pub fields: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct SignerPayload {
     pub id: String,
     pub cms_bytes_base64: String,
@@ -16,6 +22,9 @@ pub struct SignerPayload {
     pub is_integrity_ok: bool,
     pub signature_type: String,
     pub sub_filter: Option<String>,
+    pub locked_fields: Option<FieldLockPayload>,
+    pub filled_fields: Vec<String>,
+    pub revision_index: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -75,6 +84,15 @@ pub fn parse_pdf(ptr: *const u8, len: usize) -> Result<String, JsValue> {
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         for signer_hash in signer_hashes {
+            let locked_fields_payload = sig.locked_fields.as_ref().map(|lock| FieldLockPayload {
+                action: match lock.action {
+                    parser::LockAction::All => "All".to_string(),
+                    parser::LockAction::Include => "Include".to_string(),
+                    parser::LockAction::Exclude => "Exclude".to_string(),
+                },
+                fields: lock.fields.clone(),
+            });
+
             let payload = SignerPayload {
                 id: signer_hash.signer_id,
                 cms_bytes_base64: general_purpose::STANDARD.encode(&sig.cms_bytes),
@@ -84,6 +102,9 @@ pub fn parse_pdf(ptr: *const u8, len: usize) -> Result<String, JsValue> {
                 is_integrity_ok: signer_hash.is_integrity_ok,
                 signature_type: sig.signature_type.clone(),
                 sub_filter: sig.sub_filter.clone(),
+                locked_fields: locked_fields_payload,
+                filled_fields: sig.filled_fields.clone(),
+                revision_index: sig.revision_index,
             };
             request_payload.signers.push(payload);
         }
