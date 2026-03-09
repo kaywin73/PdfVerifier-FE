@@ -41,10 +41,19 @@
                 <h2>Verification Result</h2>
                 <span id="statusBadge" class="status-badge status-waiting">Waiting for PDF</span>
             </div>
-            <div class="panel-content">
+            <div class="panel-content" id="signaturePanelContainer">
                 <pre id="jsonOutput">// Upload a PDF to see the signature details extracted by Wasm.</pre>
             </div>
         </aside>
+    </div>
+
+    <!-- Debug Panel -->
+    <div class="debug-panel">
+        <h3>Debug JSON Input</h3>
+        <p>Paste sample JSON here to test the Signature Panel UI without Wasm</p>
+        <textarea id="debugJsonInput"
+            placeholder='{"document": { "fileName": "contract_2026_signed.pdf", ... } }'></textarea>
+        <button id="debugJsonBtn">Render Signature UI</button>
     </div>
 
     <script type="module" src="main.js"></script>
