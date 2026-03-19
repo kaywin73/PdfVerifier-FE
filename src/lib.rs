@@ -36,6 +36,8 @@ pub struct DssPayload {
 
 #[derive(Serialize, Deserialize)]
 pub struct VerifyRequest {
+    pub pdf_filename: String,
+    pub pdf_hash_base64: String,
     pub signers: Vec<SignerPayload>,
     pub dss: Option<DssPayload>,
     pub doc_mdp_permission: Option<i32>,
@@ -58,11 +60,14 @@ pub fn free_memory(ptr: *mut u8, size: usize) {
 }
 
 #[wasm_bindgen]
-pub fn parse_pdf(ptr: *const u8, len: usize) -> Result<String, JsValue> {
+pub fn parse_pdf(ptr: *const u8, len: usize, filename: String) -> Result<String, JsValue> {
     console_error_panic_hook::set_once();
     
     // Safety: The pointer must be valid and allocated by `alloc_memory` above.
     let data = unsafe { std::slice::from_raw_parts(ptr, len) };
+
+    let pdf_hash = hashing::calculate_sha256(data);
+    let pdf_hash_base64 = general_purpose::STANDARD.encode(&pdf_hash);
 
     let extraction_result = parser::extract_signatures(data)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -74,6 +79,8 @@ pub fn parse_pdf(ptr: *const u8, len: usize) -> Result<String, JsValue> {
     });
 
     let mut request_payload = VerifyRequest {
+        pdf_filename: filename,
+        pdf_hash_base64,
         signers: Vec::new(),
         dss: dss_payload,
         doc_mdp_permission: extraction_result.doc_mdp_permission,

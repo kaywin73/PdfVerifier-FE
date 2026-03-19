@@ -162,3 +162,6 @@ fn hash_document(content: &[u8], oid: &str) -> Result<Vec<u8>, Box<dyn std::erro
         _ => Err(format!("Unsupported digest algorithm OID: {}", oid).into()),
     }
 }
+pub fn calculate_sha256(content: &[u8]) -> Vec<u8> {
+    Sha256::digest(content).to_vec()
+}
