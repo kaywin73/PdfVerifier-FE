@@ -42,7 +42,7 @@ async function processFile(file) {
 
     try {
         const arrayBuffer = await file.arrayBuffer();
-        const result = await verifyPdf(arrayBuffer);
+        const result = await verifyPdf(arrayBuffer, file.name);
         
         console.log("Wasm Result:", result);
         updateStatus("Success", "success");

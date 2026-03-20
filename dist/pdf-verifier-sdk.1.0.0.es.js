@@ -149,16 +149,16 @@ async function m() {
 function r() {
   return J;
 }
-async function P(I) {
+async function P(I, A = "document.pdf") {
   J || await m();
-  const A = I.byteLength, g = new Uint8Array(I);
-  let B, C = null;
+  const g = I.byteLength, B = new Uint8Array(I);
+  let C, i = null;
   try {
-    C = T(A), new Uint8Array(y.memory.buffer).set(g, C), B = t(C, A);
+    i = T(g), new Uint8Array(y.memory.buffer).set(B, i), C = t(i, g, A);
   } finally {
-    C !== null && Z(C, A);
+    i !== null && Z(i, g);
   }
-  return JSON.parse(B);
+  return JSON.parse(C);
 }
 function K(I, A) {
   return I ? H.sign_ok : H.sign_error;

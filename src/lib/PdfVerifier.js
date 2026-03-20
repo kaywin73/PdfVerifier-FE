@@ -19,7 +19,7 @@ export function isReady() {
 /**
  * Parses a PDF from an ArrayBuffer and returns the JSON result.
  */
-export async function verifyPdf(arrayBuffer) {
+export async function verifyPdf(arrayBuffer, filename = "document.pdf") {
     if (!wasmReady) await initPdfVerifier();
 
     const fileLen = arrayBuffer.byteLength;
@@ -31,7 +31,7 @@ export async function verifyPdf(arrayBuffer) {
         ptr = alloc_memory(fileLen);
         const wasmMemory = new Uint8Array(wasmModule.memory.buffer);
         wasmMemory.set(uint8Array, ptr);
-        resultJson = parse_pdf(ptr, fileLen);
+        resultJson = parse_pdf(ptr, fileLen, filename);
     } finally {
         if (ptr !== null) {
             free_memory(ptr, fileLen);
