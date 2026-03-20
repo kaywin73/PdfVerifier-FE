@@ -3,7 +3,7 @@ use cms::signed_data::{SignedData, SignerIdentifier};
 use der::{Decode, Encode};
 use sha2::{Sha256, Sha384, Sha512, Digest};
 use sha3::{Sha3_256, Sha3_384, Sha3_512, Shake128, Shake256, digest::{Update, ExtendableOutput, XofReader}};
-use crate::ber_util;
+
 
 pub const OID_SHA256: &str = "2.16.840.1.101.3.4.2.1";
 pub const OID_SHA384: &str = "2.16.840.1.101.3.4.2.2";
@@ -35,20 +35,16 @@ pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result
     // Debug info
     eprintln!("CMS bytes length: {}, Trimmed: {}", cms_bytes.len(), trimmed_cms_bytes.len());
 
-    let mut cms_der_buffer = Vec::new();
-    let content_info_res = ContentInfo::from_der(trimmed_cms_bytes);
-
-    let content_info = match content_info_res {
-        Ok(ci) => ci,
-        Err(e) => {
-            eprintln!("Initial DER decode failed: {:?}. Attempting BER-to-DER fallback...", e);
-            cms_der_buffer = crate::ber_util::convert_ber_to_der(cms_bytes)?;
-            eprintln!("BER-to-DER successful, new length: {}", cms_der_buffer.len());
-            std::fs::write("original_ber.bin", cms_bytes).unwrap_or(());
-            std::fs::write("converted_der.bin", &cms_der_buffer).unwrap_or(());
-            ContentInfo::from_der(&cms_der_buffer)
-                .map_err(|e2| format!("ASN.1 DER decode error (after BER conversion): {:?}", e2))?
-        }
+    let content_info = if let Ok(ci) = ContentInfo::from_der(trimmed_cms_bytes) {
+        ci
+    } else {
+        eprintln!("Initial DER decode failed. Attempting BER-to-DER fallback...");
+        let cms_der_buffer = crate::ber_util::convert_ber_to_der(cms_bytes)?;
+        eprintln!("BER-to-DER successful, new length: {}", cms_der_buffer.len());
+        std::fs::write("original_ber.bin", cms_bytes).unwrap_or(());
+        std::fs::write("converted_der.bin", &cms_der_buffer).unwrap_or(());
+        ContentInfo::from_der(&cms_der_buffer)
+            .map_err(|e2| format!("ASN.1 DER decode error (after BER conversion): {:?}", e2))?
     };
 
     let signed_data_any = &content_info.content;

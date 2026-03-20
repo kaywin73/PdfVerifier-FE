@@ -20,7 +20,7 @@ fn rec_to_der(any: &Any) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         while !remaining.is_empty() {
             // Check for End-of-Content (EOC) marker [0, 0]
             if remaining.len() >= 2 && remaining[0] == 0 && remaining[1] == 0 {
-                remaining = &remaining[2..];
+                // End-of-Content (EOC) marker
                 break;
             }
             
