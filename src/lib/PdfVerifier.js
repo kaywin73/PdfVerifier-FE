@@ -53,6 +53,20 @@ function getStatusIconPath(validity, type) {
  * Renders the signature verification UI into the specified container.
  */
 export function renderSignatureUi(container, data) {
+    if (typeof __BUILD_ENV__ !== 'undefined' && __BUILD_ENV__ === 'dev') {
+        console.log("Parsed JWT Report:", data);
+    }
+    
+    if (!data || !data.document) {
+        container.innerHTML = `
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; text-align: center; color: #b91c1c; font-family: 'Inter', sans-serif;">
+                <div style="font-weight: 600; margin-bottom: 4px;">Unable to Verify</div>
+                <div style="font-size: 14px; opacity: 0.9;">The document verification report is missing or invalid.</div>
+            </div>
+        `;
+        return;
+    }
+
     container.innerHTML = '';
     const panel = document.createElement('div');
     panel.className = 'signature-panel';

@@ -2,6 +2,15 @@ use wasm_bindgen::prelude::*;
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "dev")]
+const PUBLIC_KEY: &str = include_str!("../keys/dev_public_key.pem");
+
+#[cfg(feature = "prod")]
+const PUBLIC_KEY: &str = include_str!("../keys/prod_public_key.pem");
+
+#[cfg(not(any(feature = "dev", feature = "prod")))]
+const PUBLIC_KEY: &str = include_str!("../keys/dev_public_key.pem");
+
 pub mod parser;
 pub mod hashing;
 pub mod ber_util;
@@ -120,4 +129,25 @@ pub fn parse_pdf(ptr: *const u8, len: usize, filename: String) -> Result<String,
     let json = serde_json::to_string(&request_payload).map_err(|e| JsValue::from_str(&e.to_string()))?;
     web_sys::console::log_1(&JsValue::from_str(&format!("Wasm Output: {}", json)));
     Ok(json)
+}
+
+#[wasm_bindgen]
+pub fn verify_token_report(token_report: String, signature_base64: String) -> Result<bool, JsValue> {
+    use p256::ecdsa::{VerifyingKey, Signature, signature::Verifier};
+    use p256::pkcs8::DecodePublicKey;
+    
+    let verifying_key = VerifyingKey::from_public_key_pem(PUBLIC_KEY)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse public key: {}", e)))?;
+    
+    let sig_bytes = general_purpose::STANDARD.decode(signature_base64.trim())
+        .map_err(|e| JsValue::from_str(&format!("Failed to decode signature: {}", e)))?;
+    
+    let signature = Signature::from_der(&sig_bytes)
+        .or_else(|_| Signature::try_from(sig_bytes.as_slice()))
+        .map_err(|e| JsValue::from_str(&format!("Invalid signature format: {}", e)))?;
+    
+    match verifying_key.verify(token_report.as_bytes(), &signature) {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
+    }
 }

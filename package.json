@@ -1,5 +1,6 @@
 {
   "name": "pdf-verifier-fe",
+  "type": "module",
   "version": "1.0.0",
   "description": "PDF Signature Verifier WASM SDK",
   "main": "dist/pdf-verifier-sdk.umd.js",
@@ -9,9 +10,13 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build:wasm": "wasm-pack build --target web",
-    "build:lib": "vite build",
-    "build": "npm run build:wasm && npm run build:lib",
+    "build:wasm:dev": "wasm-pack build --target web -- --features dev",
+    "build:wasm:prod": "wasm-pack build --target web -- --features prod",
+    "build:lib:dev": "set BUILD_ENV=dev&& vite build --mode development",
+    "build:lib:prod": "set BUILD_ENV=prod&& vite build --mode production",
+    "build:dev": "npm run build:wasm:dev && npm run build:lib:dev",
+    "build:prod": "npm run build:wasm:prod && npm run build:lib:prod",
+    "build": "npm run build:prod",
     "preview": "vite preview"
   },
   "devDependencies": {
