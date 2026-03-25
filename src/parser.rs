@@ -110,7 +110,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                             let mdp_permission = extract_mdp_permission(&doc, dict);
                             
                             // 1. Try FieldMDP transform first
-                            let mut locked_fields = extract_field_mdp_lock(dict);
+                            let mut locked_fields = extract_field_mdp_lock(&doc, dict);
                             
                             let mut sig_obj_id = None;
                             for (id, obj) in &doc.objects {
@@ -289,17 +289,38 @@ fn get_stream_bytes(doc: &Document, obj: &Object) -> Option<Vec<u8>> {
     Some(stream.content.clone())
 }
 
-fn extract_mdp_permission(_doc: &Document, sig_dict: &Dictionary) -> Option<i32> {
-    if let Ok(Object::Array(ref_array)) = sig_dict.get(b"Reference") {
+fn extract_mdp_permission(doc: &Document, sig_dict: &Dictionary) -> Option<i32> {
+    let refs = match sig_dict.get(b"Reference") {
+        Ok(Object::Array(arr)) => Some(arr.clone()),
+        Ok(Object::Reference(id)) => doc.get_object(*id).ok().and_then(|o| {
+            if let Ok(arr) = o.as_array() {
+                Some(arr.clone())
+            } else if let Ok(dict) = o.as_dict() {
+                Some(vec![Object::Dictionary(dict.clone())])
+            } else {
+                None
+            }
+        }),
+        Ok(Object::Dictionary(d)) => Some(vec![Object::Dictionary(d.clone())]),
+        _ => None,
+    };
+
+    if let Some(ref_array) = refs {
         for ref_obj in ref_array {
-            if let Ok(ref_dict) = ref_obj.as_dict() {
-                let is_doc_mdp = match ref_dict.get(b"TransformMethod").and_then(|o| o.as_name()) {
+            let ref_dict = match ref_obj {
+                Object::Dictionary(ref d) => Some(d),
+                Object::Reference(id) => doc.get_object(id).ok().and_then(|o| o.as_dict().ok()),
+                _ => None,
+            };
+
+            if let Some(d) = ref_dict {
+                let is_doc_mdp = match d.get(b"TransformMethod").and_then(|o| o.as_name()) {
                     Ok(n) => n == b"DocMDP",
                     Err(_) => false,
                 };
                 
                 if is_doc_mdp {
-                    if let Ok(params) = ref_dict.get(b"TransformParams").and_then(|o| o.as_dict()) {
+                    if let Ok(params) = d.get(b"TransformParams").and_then(|o| o.as_dict()) {
                         if let Ok(Object::Integer(p)) = params.get(b"P") {
                             return Some(*p as i32);
                         }
@@ -355,17 +376,38 @@ fn extract_lock_dict(field_dict: &Dictionary) -> Option<FieldLock> {
     None
 }
 
-fn extract_field_mdp_lock(sig_dict: &Dictionary) -> Option<FieldLock> {
-    if let Ok(Object::Array(ref_array)) = sig_dict.get(b"Reference") {
+fn extract_field_mdp_lock(doc: &Document, sig_dict: &Dictionary) -> Option<FieldLock> {
+    let refs = match sig_dict.get(b"Reference") {
+        Ok(Object::Array(arr)) => Some(arr.clone()),
+        Ok(Object::Reference(id)) => doc.get_object(*id).ok().and_then(|o| {
+            if let Ok(arr) = o.as_array() {
+                Some(arr.clone())
+            } else if let Ok(dict) = o.as_dict() {
+                Some(vec![Object::Dictionary(dict.clone())])
+            } else {
+                None
+            }
+        }),
+        Ok(Object::Dictionary(d)) => Some(vec![Object::Dictionary(d.clone())]),
+        _ => None,
+    };
+
+    if let Some(ref_array) = refs {
         for ref_obj in ref_array {
-            if let Ok(ref_dict) = ref_obj.as_dict() {
-                let is_field_mdp = match ref_dict.get(b"TransformMethod").and_then(|o| o.as_name()) {
+            let ref_dict = match ref_obj {
+                Object::Dictionary(ref d) => Some(d),
+                Object::Reference(id) => doc.get_object(id).ok().and_then(|o| o.as_dict().ok()),
+                _ => None,
+            };
+
+            if let Some(d) = ref_dict {
+                let is_field_mdp = match d.get(b"TransformMethod").and_then(|o| o.as_name()) {
                     Ok(n) => n == b"FieldMDP",
                     Err(_) => false,
                 };
                 
                 if is_field_mdp {
-                    if let Ok(params) = ref_dict.get(b"TransformParams").and_then(|o| o.as_dict()) {
+                    if let Ok(params) = d.get(b"TransformParams").and_then(|o| o.as_dict()) {
                         let action = match params.get(b"Action").and_then(|o| o.as_name()) {
                             Ok(b"All") => LockAction::All,
                             Ok(b"Include") => LockAction::Include,
