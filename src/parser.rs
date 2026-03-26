@@ -15,6 +15,7 @@ pub struct ExtractedSignature {
     pub byte_range: Vec<i64>,
     pub locked_fields: Option<FieldLock>,
     pub filled_fields: Vec<String>,
+    pub annotation_changes: Vec<String>,
     pub revision_index: u32,
     pub byte_range_start: usize,
 }
@@ -43,6 +44,8 @@ pub struct ExtractionResult {
     pub signatures: Vec<ExtractedSignature>,
     pub dss: Option<DssData>,
     pub doc_mdp_permission: Option<i32>,
+    pub filled_fields_after_last_sig: Vec<String>,
+    pub annotation_changes_after_last_sig: Vec<String>,
 }
 
 pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn std::error::Error>> {
@@ -178,8 +181,9 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 }
                             }
 
-                            // 3. Extract filled fields
+                            // 3. Extract modifications (fields and annotations)
                             let mut filled_fields = Vec::new();
+                            let mut annotation_changes = Vec::new();
                             let incremental_end = offset2 + len2;
                             let mut eofs_found = 0;
                             let mut incremental_start = 0;
@@ -220,18 +224,28 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                         if is_modified {
                                             let is_sig_field = f_dict.get(b"FT").and_then(|o| o.as_name()).map(|n| n == b"Sig").unwrap_or(false);
                                             if !is_sig_field {
-                                                let field_name = match t_obj {
-                                                    Object::String(s, _) => String::from_utf8_lossy(s).into_owned(),
-                                                    _ => "Unknown".to_string(),
-                                                };
-                                                
-                                                let page_info = if let Some(page_num) = annot_to_page.get(id) {
-                                                    format!(" on page {}", page_num)
-                                                } else {
-                                                    "".to_string()
-                                                };
-                                                
-                                                filled_fields.push(format!("Field {}{}", field_name, page_info));
+                                                if let Ok(t_obj) = f_dict.get(b"T") {
+                                                    let field_name = match t_obj {
+                                                        Object::String(s, _) => String::from_utf8_lossy(s).into_owned(),
+                                                        _ => "Unknown".to_string(),
+                                                    };
+                                                    
+                                                    let page_info = if let Some(page_num) = annot_to_page.get(id) {
+                                                        format!(" on page {}", page_num)
+                                                    } else {
+                                                        "".to_string()
+                                                    };
+                                                    
+                                                    filled_fields.push(format!("Field {}{}", field_name, page_info));
+                                                } else if let Some(page_num) = annot_to_page.get(id) {
+                                                    // Detection case for Non-Field Annotations (highlights, sticky notes, etc.)
+                                                    let subtype = f_dict.get(b"Subtype")
+                                                        .and_then(|o| o.as_name())
+                                                        .map(|n| String::from_utf8_lossy(n).into_owned())
+                                                        .unwrap_or("Unknown".to_string());
+                                                    
+                                                    annotation_changes.push(format!("{} Annotation on page {}", subtype, page_num));
+                                                }
                                             }
                                         }
                                     }
@@ -255,6 +269,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 byte_range,
                                 locked_fields,
                                 filled_fields,
+                                annotation_changes,
                                 revision_index: 0,
                                 byte_range_start,
                             });
@@ -271,7 +286,47 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
         sig.revision_index = (i + 1) as u32;
     }
 
-    Ok(ExtractionResult { signatures, dss, doc_mdp_permission })
+    // 5. Detect changes after the last signature
+    let mut filled_fields_after_last_sig = Vec::new();
+    let mut annotation_changes_after_last_sig = Vec::new();
+
+    if let Some(last_sig) = signatures.last() {
+        let last_offset = last_sig.byte_range[2] as usize + last_sig.byte_range[3] as usize;
+        if last_offset < raw_bytes.len() {
+            let final_update_bytes = &raw_bytes[last_offset..];
+            
+            for (id, obj) in &doc.objects {
+                if let Object::Dictionary(f_dict) = obj {
+                    let obj_marker = format!("{} {} obj", id.0, id.1);
+                    let marker_bytes = obj_marker.as_bytes();
+                    
+                    if final_update_bytes.windows(marker_bytes.len()).any(|w| w == marker_bytes) {
+                        if let Ok(t_obj) = f_dict.get(b"T") {
+                             let field_name = match t_obj {
+                                Object::String(s, _) => String::from_utf8_lossy(s).into_owned(),
+                                _ => "Unknown".to_string(),
+                            };
+                            filled_fields_after_last_sig.push(field_name);
+                        } else if let Some(page_num) = annot_to_page.get(id) {
+                            let subtype = f_dict.get(b"Subtype")
+                                .and_then(|o| o.as_name())
+                                .map(|n| String::from_utf8_lossy(n).into_owned())
+                                .unwrap_or("Unknown".to_string());
+                            annotation_changes_after_last_sig.push(format!("{} Annotation on page {}", subtype, page_num));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ExtractionResult { 
+        signatures, 
+        dss, 
+        doc_mdp_permission,
+        filled_fields_after_last_sig,
+        annotation_changes_after_last_sig
+    })
 }
 
 fn extract_dss(doc: &Document) -> Option<DssData> {

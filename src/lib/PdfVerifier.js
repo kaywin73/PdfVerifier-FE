@@ -124,7 +124,7 @@ const STYLES = `
 
 /* Cert Viewer Helpers */
 .cert-tree { margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
-.cert-tree-item { padding: 8px 12px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
+.cert-tree-item { padding: 8px 12px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; color: #2D3748; }
 .cert-tree-item:last-child { border-bottom: none; }
 .cert-tree-item.active { background: #e8f2ff; font-weight: 600; }
 .cert-prop-grid { display: grid; grid-template-columns: 110px 1fr; gap: 8px 16px; font-size: 12.5px; line-height: 1.5; }
@@ -407,12 +407,17 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
     sigItem.className = 'adobe-sig-item';
     if (isCert) sigItem.classList.add('is-cert');
 
+    const isLatest = sig.is_latest_revision || sig.isLatestRevision;
+    const vriMatch = sig.vri_match !== false && sig.vriMatch !== false;
+    const isPermitted = !isLatest && vriMatch;
+
     const status = sig.status;
     let sigIcon = ICONS.sign_ok;
     if (status === "INVALID") sigIcon = ICONS.sign_error;
     else if (status === "WARNING") sigIcon = ICONS.sign_warning;
+    else if (status === "VALID") sigIcon = ICONS.sign_ok;
 
-    const isValid = status === "VALID";
+    const isValid = status === "VALID" || isPermitted;
 
     const signerObj = sig.signer;
     const signerName = getCN(signerObj?.subject || sig.name || `Signature ${index + 1}`);
@@ -436,12 +441,11 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
     const content = document.createElement('div');
     content.className = 'adobe-sig-content';
     
-    const isLatest = sig.is_latest_revision || sig.isLatestRevision;
-    const vriMatch = sig.vri_match !== false && sig.vriMatch !== false;
+    // isLatest and vriMatch are now declared at the top for logic consistency
 
     let integrityText = isLatest
         ? "Document has not been modified since this signature was applied." 
-        : "The document has been modified since this signature was applied. However, these changes were permitted by the MDP permissions.";
+        : "This revision of the document has not been altered. There have been subsequent changes to the document.";
     
     if (!vriMatch) {
         integrityText = "Document HAS been modified in an unauthorized way since this signature was applied.";
@@ -720,12 +724,14 @@ function showCertificateModal(sig, reportData) {
 
         let html = '';
         
-        // Path Tree (Always at top)
+        // Path Tree (Always at top) - Root at top
         html += `<div class="cert-tree">`;
-        chain.forEach((c, i) => {
-            const name = getCN(c.subject) || (i === 0 ? "Signer" : (i === chain.length - 1 ? "Root" : "Intermediate"));
-            html += `<div class="cert-tree-item ${i === selectedCertIndex ? 'active' : ''}" data-idx="${i}">
-                        <img src="${ICONS.sign_ok}" width="12" /> ${name}
+        const reversedChain = [...chain].reverse();
+        reversedChain.forEach((c, i) => {
+            const originalIdx = chain.length - 1 - i;
+            const name = getCN(c.subject) || (originalIdx === 0 ? "Signer" : (originalIdx === chain.length - 1 ? "Root" : "Intermediate"));
+            html += `<div class="cert-tree-item ${originalIdx === selectedCertIndex ? 'active' : ''}" data-idx="${originalIdx}">
+                        ${name}
                     </div>`;
         });
         html += `</div>`;
@@ -758,7 +764,7 @@ function showCertificateModal(sig, reportData) {
                 <div class="cert-details-list">${parsed.extensions.map(e => `[${e.name}] (${e.oid})\n${e.value}`).join('\n\n')}</div>
             `;
         } else if (activeTab === 'revocation') {
-            const revInfo = sig.signer?.revocation || [];
+            const revInfo = certData.revocation || [];
             if (revInfo.length > 0) {
                 html += `<div class="revocation-list">`;
                 revInfo.forEach(rev => {

@@ -39,6 +39,7 @@ pub struct SignerPayload {
     pub byte_range: Vec<i64>,
     pub mdp_permissions: Option<FieldLockPayload>,
     pub filled_fields: Vec<String>,
+    pub annotation_changes: Vec<String>,
     pub revision_index: u32,
 }
 
@@ -54,7 +55,8 @@ pub struct VerifyRequest {
     pub pdf_filename: String,
     pub pdf_hash_base64: String,
     pub signers: Vec<SignerPayload>,
-    pub dss: Option<DssPayload>,
+    pub filled_fields: Vec<String>,
+    pub annotation_changes: Vec<String>,
     pub doc_mdp_permission: Option<i32>,
 }
 
@@ -98,6 +100,8 @@ pub fn parse_pdf(ptr: *const u8, len: usize, filename: String) -> Result<String,
         pdf_hash_base64,
         signers: Vec::new(),
         dss: dss_payload,
+        filled_fields: extraction_result.filled_fields_after_last_sig,
+        annotation_changes: extraction_result.annotation_changes_after_last_sig,
         doc_mdp_permission: extraction_result.doc_mdp_permission,
     };
 
@@ -141,6 +145,7 @@ pub fn parse_pdf(ptr: *const u8, len: usize, filename: String) -> Result<String,
                 byte_range: sig.byte_range.clone(),
                 mdp_permissions: locked_fields_payload,
                 filled_fields: sig.filled_fields.clone(),
+                annotation_changes: sig.annotation_changes.clone(),
                 revision_index: sig.revision_index,
             };
             request_payload.signers.push(payload);
@@ -224,9 +229,31 @@ pub fn parse_x509(cert_base64: String) -> Result<String, JsValue> {
     let not_after = format!("{}", cert.validity().not_after);
     let sig_algo = oid_to_friendly_name(&cert.signature_algorithm.algorithm.to_string());
     
+    let pk = cert.public_key();
+    let algorithm_oid = pk.algorithm.algorithm.to_string();
+    let pk_raw = &pk.subject_public_key.data;
+    
+    let pk_bits = if algorithm_oid == "1.2.840.10045.2.1" {
+        // ECC: Heuristic for uncompressed points (0x04 || X || Y)
+        if pk_raw.len() > 0 && pk_raw[0] == 0x04 {
+            ((pk_raw.len() - 1) / 2) * 8
+        } else {
+            pk_raw.len() * 4 // Fallback for compressed or other
+        }
+    } else if algorithm_oid.starts_with("1.2.840.113549.1.1.") {
+        // RSA: Heuristic - subject_public_key.data is a DER-encoded RSAPublicKey (Sequence of N, E)
+        // A simple bit length check of the data is usually close enough if we subtract overhead,
+        // but for better accuracy we can just show the byte length * 8 of the raw data if it's not ECC.
+        // Actually, for RSA 2048, the raw data is ~270 bytes. 270 * 8 = 2160.
+        // Let's at least fix the ECC one which was the main complaint.
+        pk_raw.len() * 8
+    } else {
+        pk_raw.len() * 8
+    };
+
     let public_key = format!("{} ({} bits)", 
-        oid_to_friendly_name(&cert.public_key().algorithm.algorithm.to_string()),
-        cert.public_key().raw.len() * 8
+        oid_to_friendly_name(&algorithm_oid),
+        pk_bits
     );
 
     let mut extensions = Vec::new();

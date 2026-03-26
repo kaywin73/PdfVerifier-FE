@@ -1,16 +1,22 @@
 use cms::content_info::ContentInfo;
 use cms::signed_data::{SignedData, SignerIdentifier};
 use der::{Decode, Encode};
-use sha2::{Sha256, Sha384, Sha512, Digest};
-use sha3::{Sha3_256, Sha3_384, Sha3_512, Shake128, Shake256, digest::{Update, ExtendableOutput, XofReader}};
+use sha2::{Sha224, Sha256, Sha384, Sha512, Digest};
+use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512, Shake128, Shake256, digest::{Update, ExtendableOutput, XofReader}};
+use md5::Md5;
+use sha1::Sha1;
 
 
+pub const OID_MD5: &str = "1.2.840.113549.2.5";
+pub const OID_SHA1: &str = "1.3.14.3.2.26";
+pub const OID_SHA224: &str = "2.16.840.1.101.3.4.2.4";
 pub const OID_SHA256: &str = "2.16.840.1.101.3.4.2.1";
 pub const OID_SHA384: &str = "2.16.840.1.101.3.4.2.2";
 pub const OID_SHA512: &str = "2.16.840.1.101.3.4.2.3";
-pub const OID_SHA3_256: &str = "2.16.840.1.101.3.4.3.10";
-pub const OID_SHA3_384: &str = "2.16.840.1.101.3.4.3.11";
-pub const OID_SHA3_512: &str = "2.16.840.1.101.3.4.3.12";
+pub const OID_SHA3_224: &str = "2.16.840.1.101.3.4.2.7";
+pub const OID_SHA3_256: &str = "2.16.840.1.101.3.4.2.8";
+pub const OID_SHA3_384: &str = "2.16.840.1.101.3.4.2.9";
+pub const OID_SHA3_512: &str = "2.16.840.1.101.3.4.2.10";
 pub const OID_SHAKE128: &str = "2.16.840.1.101.3.4.2.11";
 pub const OID_SHAKE256: &str = "2.16.840.1.101.3.4.2.12";
 
@@ -149,9 +155,13 @@ fn format_sid(sid: &SignerIdentifier) -> String {
 
 fn hash_document(content: &[u8], oid: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     match oid {
+        OID_MD5 => Ok(Md5::digest(content).to_vec()),
+        OID_SHA1 => Ok(Sha1::digest(content).to_vec()),
+        OID_SHA224 => Ok(Sha224::digest(content).to_vec()),
         OID_SHA256 => Ok(Sha256::digest(content).to_vec()),
         OID_SHA384 => Ok(Sha384::digest(content).to_vec()),
         OID_SHA512 => Ok(Sha512::digest(content).to_vec()),
+        OID_SHA3_224 => Ok(Sha3_224::digest(content).to_vec()),
         OID_SHA3_256 => Ok(Sha3_256::digest(content).to_vec()),
         OID_SHA3_384 => Ok(Sha3_384::digest(content).to_vec()),
         OID_SHA3_512 => Ok(Sha3_512::digest(content).to_vec()),
