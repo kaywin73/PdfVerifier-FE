@@ -8,6 +8,11 @@ pub struct ExtractedSignature {
     pub mdp_permission: Option<i32>,
     pub signature_type: String,
     pub sub_filter: Option<String>,
+    pub location: Option<String>,
+    pub reason: Option<String>,
+    pub filter: Option<String>,
+    pub creation_app: Option<String>,
+    pub byte_range: Vec<i64>,
     pub locked_fields: Option<FieldLock>,
     pub filled_fields: Vec<String>,
     pub revision_index: u32,
@@ -79,15 +84,15 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                     let mut byte_range = Vec::new();
                     for val in byte_range_array {
                         if let Object::Integer(i) = val {
-                            byte_range.push(*i as usize);
+                            byte_range.push(*i);
                         }
                     }
 
                     if byte_range.len() == 4 {
-                        let offset1 = byte_range[0];
-                        let len1 = byte_range[1];
-                        let offset2 = byte_range[2];
-                        let len2 = byte_range[3];
+                        let offset1 = byte_range[0] as usize;
+                        let len1 = byte_range[1] as usize;
+                        let offset2 = byte_range[2] as usize;
+                        let len2 = byte_range[3] as usize;
 
                         let mut signed_content = Vec::new();
                         signed_content.extend_from_slice(&raw_bytes[offset1..offset1 + len1]);
@@ -107,6 +112,32 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 .ok()
                                 .map(|n| String::from_utf8_lossy(n).into_owned());
 
+                            let location = dict.get(b"Location")
+                                .and_then(|o| o.as_str())
+                                .ok()
+                                .map(|s| String::from_utf8_lossy(s).into_owned());
+
+                            let reason = dict.get(b"Reason")
+                                .and_then(|o| o.as_str())
+                                .ok()
+                                .map(|s| String::from_utf8_lossy(s).into_owned());
+
+                            let filter = dict.get(b"Filter")
+                                .and_then(|o| o.as_name())
+                                .ok()
+                                .map(|n| String::from_utf8_lossy(n).into_owned());
+
+                            let mut creation_app = None;
+                            if let Ok(prop_build) = dict.get(b"Prop_Build").and_then(|o| o.as_dict()) {
+                                if let Ok(app_dict) = prop_build.get(b"App").and_then(|o| o.as_dict()) {
+                                    creation_app = app_dict.get(b"REFull")
+                                        .or_else(|_| app_dict.get(b"Name"))
+                                        .ok()
+                                        .and_then(|o| o.as_str().ok())
+                                        .map(|s| String::from_utf8_lossy(s).into_owned());
+                                }
+                            }
+
                             let mdp_permission = extract_mdp_permission(&doc, dict);
                             
                             // 1. Try FieldMDP transform first
@@ -124,7 +155,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                         if let Ok(Object::Array(vr)) = v_dict.get(b"ByteRange") {
                                             let is_match = vr.iter().enumerate().all(|(i, val)| {
                                                 if let Object::Integer(v) = val {
-                                                    byte_range.get(i).map_or(false, |&b| b == *v as usize)
+                                                    byte_range.get(i).map_or(false, |&b| b == *v)
                                                 } else {
                                                     false
                                                 }
@@ -217,6 +248,11 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 mdp_permission,
                                 signature_type,
                                 sub_filter,
+                                location,
+                                reason,
+                                filter,
+                                creation_app,
+                                byte_range,
                                 locked_fields,
                                 filled_fields,
                                 revision_index: 0,

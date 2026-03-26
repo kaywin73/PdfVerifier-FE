@@ -291,8 +291,8 @@ export function renderSignatureUi(container, data) {
     const statusHeader = document.createElement('div');
     statusHeader.className = 'adobe-status-bar';
     
-    const overallStatus = data.document?.overallStatus;
-    const postSigChanges = data.document?.filledFieldsAfterLastSig || [];
+    const overallStatus = data.document?.overall_status || data.document?.overallStatus;
+    const postSigChanges = data.document?.filled_fields_after_last_sig || data.document?.filledFieldsAfterLastSig || [];
     const hasPostSigChanges = postSigChanges.length > 0;
     
     let statusIcon = ICONS.sign_ok;
@@ -519,7 +519,33 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
             ${timeSource ? `<div class="detail-subtext">${timeSource}</div>` : ''}
         `;
         content.appendChild(timeRow);
+    }
 
+    // New Metadata Fields
+    const attrs = sig.details || {};
+    if (attrs.creation_app || attrs.creationApp) {
+        content.insertAdjacentHTML('beforeend', `
+            <div class="sig-detail-row">
+                <span class="detail-label">Signing Application:</span>
+                <div class="detail-text">${attrs.creation_app || attrs.creationApp}</div>
+            </div>
+        `);
+    }
+    if (attrs.reason) {
+        content.insertAdjacentHTML('beforeend', `
+            <div class="sig-detail-row">
+                <span class="detail-label">Reason:</span>
+                <div class="detail-text">${attrs.reason}</div>
+            </div>
+        `);
+    }
+    if (attrs.location) {
+        content.insertAdjacentHTML('beforeend', `
+            <div class="sig-detail-row">
+                <span class="detail-label">Location:</span>
+                <div class="detail-text">${attrs.location}</div>
+            </div>
+        `);
     }
 
     // Form Fills Detection
@@ -628,7 +654,7 @@ function showCertificateModal(sig, reportData) {
     
     // Certificate Resolution Logic
     const chainEntries = sig.signer?.certificateChain || [];
-    const pool = reportData.globalPool || reportData.document?.dssGlobalPool?.certificates || [];
+    const pool = reportData.globalPool || reportData.document?.dss_global_pool?.certificates || reportData.document?.dssGlobalPool?.certificates || [];
     
     console.log("Chain Entries:", chainEntries);
     console.log("Resolved Pool:", pool);
@@ -868,7 +894,7 @@ function showSignatureDetailsModal(sig, reportData) {
             
             <div class="cert-prop-grid">
                 <span class="cert-prop-label">Signature Type:</span><span class="cert-prop-value">${sig.signature_type || sig.signatureType || 'PAdES'}</span>
-                <span class="cert-prop-label">PAdES Level:</span><span class="cert-prop-value">${sig.level || 'B-B'}</span>
+                <span class="cert-prop-label">PAdES Level:</span><span class="cert-prop-value">${sig.pades_level || sig.padesLevel || sig.level || 'B-B'}</span>
                 <span class="cert-prop-label">Digest Algo:</span><span class="cert-prop-value">${details.message_digest_algo || details.messageDigestAlgo || 'SHA-256'}</span>
                 <span class="cert-prop-label">Signature Algo:</span><span class="cert-prop-value">${details.signature_algo || details.signatureAlgo || 'RSA'}</span>
             </div>

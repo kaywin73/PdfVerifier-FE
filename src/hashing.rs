@@ -59,6 +59,8 @@ pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result
         let document_hash = hash_document(signed_content, &digest_alg_oid)?;
 
         let mut is_integrity_ok = false;
+        
+        // 1. Standard CMS check: Message Digest attribute in signed_attrs
         if let Some(signed_attrs) = &signer_info.signed_attrs {
             for attr in signed_attrs.iter() {
                 if attr.oid.to_string() == "1.2.840.113549.1.9.4" {
@@ -68,6 +70,20 @@ pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result
                                 is_integrity_ok = true;
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // 2. RFC 3161 Timestamp check: Document hash is in TSTInfo.messageImprint.hashedMessage
+        if !is_integrity_ok && signed_data.encap_content_info.econtent_type.to_string() == "1.2.840.113549.1.9.16.1.4" {
+            if let Some(econtent) = &signed_data.encap_content_info.econtent {
+                if let Ok(econtent_bytes) = econtent.to_der() {
+                    // TSTInfo is a SEQUENCE. We look for the document hash (OctetString) inside it.
+                    // Instead of full structure parsing, we search the econtent for the document_hash.
+                    // RFC 3161 TSTInfo contains messageImprint which contains the hashedMessage OCTET STRING.
+                    if econtent_bytes.windows(document_hash.len()).any(|w| w == &document_hash[..]) {
+                        is_integrity_ok = true;
                     }
                 }
             }
