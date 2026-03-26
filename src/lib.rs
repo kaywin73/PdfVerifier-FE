@@ -55,6 +55,7 @@ pub struct VerifyRequest {
     pub pdf_filename: String,
     pub pdf_hash_base64: String,
     pub signers: Vec<SignerPayload>,
+    pub dss: Option<DssPayload>,
     pub filled_fields: Vec<String>,
     pub annotation_changes: Vec<String>,
     pub doc_mdp_permission: Option<i32>,

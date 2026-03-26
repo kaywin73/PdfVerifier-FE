@@ -215,7 +215,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                         }
                                     }
 
-                                    if let Ok(t_obj) = f_dict.get(b"T") {
+                                    if f_dict.get(b"T").is_ok() {
                                         let obj_marker = format!("{} {} obj", id.0, id.1);
                                         let marker_bytes = obj_marker.as_bytes();
                                         

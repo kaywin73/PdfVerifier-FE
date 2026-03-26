@@ -26,5 +26,13 @@ export default defineConfig({
         exports: 'named'
       }
     }
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      }
+    }
   }
 });

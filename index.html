@@ -17,8 +17,10 @@
     </header>
 
     <div class="main-container">
-        <!-- Left Panel: Drag & Drop / PDF Viewer -->
-        <main class="left-panel">
+        <!-- Main Panel: PDF Viewer -->
+        <main class="pdf-viewer-container">
+            <div id="statusBarContainer"></div>
+            
             <div id="dropzoneContainer" class="dropzone-container">
                 <div id="dropzone" class="dropzone">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -35,16 +37,16 @@
             <iframe id="pdfPreview" class="hidden" title="PDF Preview"></iframe>
         </main>
 
-        <!-- Right Panel: Wasm Verification Results -->
-        <aside class="right-panel">
-            <div class="panel-header">
-                <h2>Verification Result</h2>
-                <span id="statusBadge" class="status-badge status-waiting">Waiting for PDF</span>
+        <!-- Signature Details Slider (Drawer) -->
+        <div id="signatureDrawer" class="pdf-drawer">
+            <div class="drawer-header">
+                <h2>Signature Details</h2>
+                <button id="closeDrawer" class="close-btn">&times;</button>
             </div>
-            <div class="panel-content" id="signaturePanelContainer">
-                <pre id="jsonOutput">// Upload a PDF to see the signature details extracted by Wasm.</pre>
+            <div id="signaturePanelContainer" class="drawer-content">
+                <!-- Detailed panel content will be rendered here -->
             </div>
-        </aside>
+        </div>
     </div>
 
     <!-- Debug Panel -->

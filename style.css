@@ -49,21 +49,17 @@ header h1 {
     display: flex;
     flex: 1;
     overflow: hidden;
-    padding: 1.5rem;
-    gap: 1.5rem;
+    position: relative;
 }
 
-/* Left Panel: PDF Viewer */
-.left-panel {
+/* Main Panel: PDF Viewer */
+.pdf-viewer-container {
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: var(--panel-bg);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-    overflow: hidden;
-    border: 1px solid var(--border-color);
+    background: #525659; /* Adobe PDF Background Gray */
     position: relative;
+    overflow: hidden;
 }
 
 .dropzone-container {
@@ -126,57 +122,57 @@ header h1 {
     border: none;
 }
 
-/* Right Panel: Wasm UI */
-.right-panel {
+/* Signature Details Slider (Drawer) */
+.pdf-drawer {
+    position: absolute;
+    top: 0;
+    right: -450px;
     width: 450px;
+    height: 100%;
+    background: white;
+    box-shadow: -4px 0 15px rgba(0,0,0,0.1);
+    z-index: 2000;
     display: flex;
     flex-direction: column;
-    background: var(--panel-bg);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--border-color);
-    overflow: hidden;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 1px solid #e2e8f0;
 }
 
-.panel-header {
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    background: #f8fafc;
+.pdf-drawer.open {
+    right: 0;
+}
+
+.drawer-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #e2e8f0;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    background: #f8fafc;
 }
 
-.panel-header h2 {
-    font-size: 1rem;
+.drawer-header h2 {
+    font-size: 16px;
     font-weight: 600;
+    margin: 0;
 }
 
-.status-badge {
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 9999px;
-    font-weight: 500;
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #a0aec0;
+    line-height: 1;
 }
 
-.status-waiting {
-    background: #e2e8f0;
-    color: #475569;
+.close-btn:hover {
+    color: #4a5568;
 }
 
-.status-success {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.status-error {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.status-processing {
-    background: #dbeafe;
-    color: #1e40af;
+.drawer-content {
+    flex: 1;
+    overflow-y: auto;
 }
 
 .panel-content {

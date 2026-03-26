@@ -38,11 +38,58 @@ function getCN(dn) {
 }
 
 const STYLES = `
-.adobe-signature-panel {
+.adobe-signature-panel, .pdf-signature-panel {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     color: #2D3748;
     background: #fdfdfd;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
 }
+.pdf-status-bar {
+    position: relative;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
+    width: 100%;
+    color: #000;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+.pdf-status-bar.verifying { border-color: #4a90e2; }
+.pdf-status-bar.valid { border-color: #48bb78; background: rgba(240, 255, 244, 0.95); }
+.pdf-status-bar.warning { border-color: #ed8936; background: rgba(255, 250, 240, 0.95); }
+.pdf-status-bar.invalid { border-color: #f56565; background: rgba(255, 245, 245, 0.95); }
+
+.status-bar-loader {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #e2e8f0;
+    border-top-color: #4a90e2;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.view-sigs-btn {
+    background: #4a90e2;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-left: auto;
+}
+.view-sigs-btn:hover { background: #357abd; }
 .adobe-status-bar {
     display: flex;
     align-items: center;
@@ -56,8 +103,8 @@ const STYLES = `
 .adobe-status-bar.status-warning { background-color: #fff9eb; color: #856404; }
 .adobe-status-bar.status-invalid { background-color: #fff5f5; color: #a71d1d; }
 .status-bar-icon {
-    width: 14px;
-    height: 14px;
+    width: 17px;
+    height: 17px;
     margin-right: 10px;
     flex-shrink: 0;
 }
@@ -168,6 +215,30 @@ const STYLES = `
 }
 .copy-btn:hover { color: #357abd; }
 .branding { text-align: center; margin-top: 4px; font-style: italic; opacity: 0.8; }
+
+/* SVG Overlay Styles */
+.sig-icon-container {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.sig-icon-container.size-17 { width: 17px; height: 17px; margin-right: 10px; }
+.sig-icon-container.size-19 { width: 19px; height: 19px; margin-right: 10px; }
+.sig-icon-container.size-22 { width: 22px; height: 22px; margin-right: 12px; }
+.sig-icon-container.size-29 { width: 29px; height: 29px; margin-right: 12px; }
+
+.sig-base-icon {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.sig-status-icon {
+    position: absolute;
+    bottom: -10%;
+    right: -10%;
+    width: 60%;
+    height: 60%;
+}
 `;
 
 function injectStyles() {
@@ -256,70 +327,108 @@ export async function verifyPdf(arrayBuffer, filename = "document.pdf") {
     return result;
 }
 
-function getStatusIconPath(validity, type) {
-    if (type === "signature") {
-        return validity ? ICONS.sign_ok : ICONS.sign_error;
-    } else {
-        return validity ? ICONS.stamp_ok : ICONS.stamp_error;
-    }
+function getIconOverlayHtml(type, status, sizeClass = "size-17") {
+    const baseIcon = ICONS[type] || ICONS.signature;
+    const statusIcon = ICONS[status.toLowerCase()] || ICONS.valid;
+    
+    return `
+        <div class="sig-icon-container ${sizeClass}">
+            <img class="sig-base-icon" src="${baseIcon}" alt="${type}" />
+            <img class="sig-status-icon" src="${statusIcon}" alt="${status}" />
+        </div>
+    `;
 }
 
 /**
- * Renders the signature verification UI into the specified container.
+ * Renders the top-level status bar for the PDF viewer.
  */
-export function renderSignatureUi(container, data) {
+export function renderTopStatusBar(container, data, options = {}) {
     injectStyles();
-    if (typeof __BUILD_ENV__ !== 'undefined' && __BUILD_ENV__ === 'dev') {
-        console.log("Parsed JWT Report:", data);
+    
+    // Handle both { onOpenPanel } and a direct function for convenience
+    let onOpenPanel, isVerifying = false;
+    if (typeof options === 'function') {
+        onOpenPanel = options;
+    } else {
+        onOpenPanel = options.onOpenPanel;
+        isVerifying = options.isVerifying || false;
     }
     
+    container.innerHTML = '';
+    const bar = document.createElement('div');
+    bar.className = 'pdf-status-bar';
+    
+    if (isVerifying) {
+        bar.classList.add('verifying');
+        bar.innerHTML = `
+            <div class="status-bar-loader"></div>
+            <span class="status-bar-text">Verifying signatures...</span>
+        `;
+    } else {
+        const overallStatus = data.document?.overall_status || data.document?.overallStatus;
+        const postSigChanges = data.document?.filled_fields_after_last_sig || data.document?.filledFieldsAfterLastSig || [];
+        const hasPostSigChanges = postSigChanges.length > 0;
+        
+        let statusClass = "valid";
+        let statusText = "Signed and all signatures are valid.";
+        let statusType = "valid";
+
+        if (overallStatus === "TOTAL_FAILED") {
+            statusClass = "invalid";
+            statusText = "At least one signature is invalid.";
+            statusType = "invalid";
+        } else if (overallStatus === "WARNING" || hasPostSigChanges) {
+            statusClass = "warning";
+            statusText = hasPostSigChanges 
+                ? "Document modified after signing."
+                : "At least one signature has problems.";
+            statusType = "warning";
+        }
+
+        bar.classList.add(statusClass);
+        const iconHtml = getIconOverlayHtml("signature", statusType, "size-17 status-bar-icon");
+        
+        bar.innerHTML = `
+            ${iconHtml}
+            <span class="status-bar-text" style="font-weight:600">${statusText}</span>
+            <button class="view-sigs-btn">View Signatures</button>
+        `;
+        
+        const btn = bar.querySelector('.view-sigs-btn');
+        if (btn && onOpenPanel) {
+            btn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenPanel();
+            };
+        }
+    }
+    
+    container.appendChild(bar);
+    return bar;
+}
+
+/**
+ * Renders the comprehensive signature details panel.
+ */
+export function renderSignaturePanel(container, data) {
+    injectStyles();
+    container.innerHTML = '';
+    const panel = document.createElement('div');
+    panel.className = 'pdf-signature-panel';
+    
+    // Note: Top Level Status Bar is now handled by renderTopStatusBar independently
+    
     if (!data || !data.document) {
-        container.innerHTML = `
+        panel.innerHTML = `
             <div class="empty-state-container">
                 <div class="empty-state-title">Unable to Verify</div>
                 <div class="empty-state-text">The document verification report is missing or invalid.</div>
             </div>
         `;
+        container.appendChild(panel);
         return;
     }
-
-    container.innerHTML = '';
-    const panel = document.createElement('div');
-    panel.className = 'adobe-signature-panel';
-
-    // Top Level Status Bar
-    const statusHeader = document.createElement('div');
-    statusHeader.className = 'adobe-status-bar';
-    
-    const overallStatus = data.document?.overall_status || data.document?.overallStatus;
-    const postSigChanges = data.document?.filled_fields_after_last_sig || data.document?.filledFieldsAfterLastSig || [];
-    const hasPostSigChanges = postSigChanges.length > 0;
-    
-    let statusIcon = ICONS.sign_ok;
-    let statusText = "Signed and all signatures are valid.";
-    let statusClass = "status-valid";
-
-    if (overallStatus === "TOTAL_FAILED") {
-        statusIcon = ICONS.sign_error;
-        statusText = "At least one signature is invalid.";
-        statusClass = "status-invalid";
-    } else if (overallStatus === "WARNING" || hasPostSigChanges) {
-        statusIcon = ICONS.sign_warning;
-        statusText = hasPostSigChanges 
-            ? "The document has been modified after all signatures were applied."
-            : "At least one signature has problems.";
-        statusClass = "status-warning";
-    }
-
-    statusHeader.innerHTML = `
-        <img class="status-bar-icon" src="${statusIcon}" alt="Status" />
-        <div class="status-bar-group">
-            <span class="status-bar-text">${statusText}</span>
-            ${hasPostSigChanges ? `<div class="status-bar-subtext">Modified fields: ${postSigChanges.join(', ')}</div>` : ''}
-        </div>
-    `;
-    statusHeader.classList.add(statusClass);
-    panel.appendChild(statusHeader);
 
     // Certification Section (if present)
     const signatures = data.signatures || [];
@@ -398,9 +507,11 @@ export function renderSignatureUi(container, data) {
     }
 
     panel.appendChild(footer);
-
     container.appendChild(panel);
 }
+
+// Backward compatibility alias
+export const renderSignatureUi = renderSignaturePanel;
 
 function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
     const sigItem = document.createElement('div');
@@ -411,11 +522,14 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
     const vriMatch = sig.vri_match !== false && sig.vriMatch !== false;
     const isPermitted = !isLatest && vriMatch;
 
-    const status = sig.status;
-    let sigIcon = ICONS.sign_ok;
-    if (status === "INVALID") sigIcon = ICONS.sign_error;
-    else if (status === "WARNING") sigIcon = ICONS.sign_warning;
-    else if (status === "VALID") sigIcon = ICONS.sign_ok;
+    const status = sig.status || "VALID";
+    let statusType = "valid";
+    if (status === "INVALID") statusType = "invalid";
+    else if (status === "WARNING") statusType = "warning";
+    else if (status === "VALID") statusType = "valid";
+
+    const baseType = isCert ? "certified" : "signature";
+    const iconHtml = getIconOverlayHtml(baseType, statusType, "size-17");
 
     const isValid = status === "VALID" || isPermitted;
 
@@ -427,7 +541,7 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
     header.className = 'adobe-sig-header';
     header.innerHTML = `
         <div class="sig-header-main">
-            <img class="sig-icon" src="${sigIcon}" alt="Icon" />
+            ${iconHtml}
             <div class="sig-header-text">
                 <span class="sig-title">Rev. ${revNum}: ${isCert ? 'Certified' : 'Signed'} by ${signerName}</span>
                 ${sig.name ? `<div class="sig-field-name">Signature Field: ${sig.name}</div>` : ''}
@@ -552,19 +666,6 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
         `);
     }
 
-    // Form Fills Detection
-    const filledFields = sig.filled_fields || sig.filledFields || [];
-    if (filledFields.length > 0) {
-        const fillRow = document.createElement('div');
-        fillRow.className = 'sig-detail-row form-fills';
-        fillRow.innerHTML = `
-            <div class="detail-label">Form fields filled in this revision:</div>
-            <ul class="fill-list">
-                ${filledFields.map(f => `<li>${f}</li>`).join('')}
-            </ul>
-        `;
-        content.appendChild(fillRow);
-    }
 
     // Certificate Details Link
     const certLink = document.createElement('a');
@@ -589,16 +690,18 @@ function renderTimestampItem(parent, ts, index, reportData) {
     const revNum = ts.revision_index || ts.revisionIndex || (index + 1);
     const tsaName = ts.tsa?.subject?.split(',')[0].replace('CN=', '') || "Time Stamping Authority";
 
-    const status = ts.status;
-    let tsIcon = ICONS.sign_ok;
-    if (status === "INVALID") tsIcon = ICONS.sign_error;
-    else if (status === "WARNING") tsIcon = ICONS.sign_warning;
+    const status = ts.status || "VALID";
+    let statusType = "valid";
+    if (status === "INVALID") statusType = "invalid";
+    else if (status === "WARNING") statusType = "warning";
+
+    const iconHtml = getIconOverlayHtml("timestamp", statusType, "size-17");
 
     const header = document.createElement('div');
     header.className = 'adobe-sig-header';
     header.innerHTML = `
         <div class="sig-header-main">
-            <img class="sig-icon" src="${tsIcon}" alt="Icon" />
+            ${iconHtml}
             <span class="sig-title">Rev. ${revNum}: Document Timestamp by ${tsaName}</span>
         </div>
         <svg class="chevron-icon" viewBox="0 0 20 20" fill="currentColor">
@@ -738,9 +841,14 @@ function showCertificateModal(sig, reportData) {
 
         if (activeTab === 'summary') {
             const isTrusted = sig.signer?.trust?.isTrusted === true;
+            const isCert = sig.is_certification === true || sig.isCertification === true;
+            const statusType = isTrusted ? 'valid' : 'warning';
+            const baseType = isCert ? 'certified' : 'signature';
+            const iconHtml = getIconOverlayHtml(baseType, statusType, "size-29");
+
             html += `
                 <div class="cert-status-box ${isTrusted ? 'cert-status-valid' : 'cert-status-warning'}">
-                    <img src="${isTrusted ? ICONS.sign_ok : ICONS.sign_warning}" width="16" />
+                    ${iconHtml}
                     <div>
                         <strong>This certificate is ${isTrusted ? 'trusted' : 'not verified'}</strong>
                         <div style="font-size:11.5px; margin-top:4px">${isTrusted ? 'Validated against your trusted certificates.' : 'The signer\'s identity has not been verified.'}</div>
@@ -811,9 +919,14 @@ function showCertificateModal(sig, reportData) {
     // ... (rest of renderActiveTab logic)
     // At the end of renderActiveTab, we need to wire up the buttons.
             const isTrusted = sig.signer?.trust?.isTrusted === true;
+            const isCert = sig.is_certification === true || sig.isCertification === true;
+            const statusType = isTrusted ? 'valid' : 'warning';
+            const baseType = isCert ? 'certified' : 'signature';
+            const iconHtml = getIconOverlayHtml(baseType, statusType, "size-24");
+
             html += `
                 <div class="cert-status-box ${isTrusted ? 'cert-status-valid' : 'cert-status-warning'}" style="margin-bottom:20px">
-                    <img src="${isTrusted ? ICONS.sign_ok : ICONS.sign_warning}" width="16" />
+                    ${iconHtml}
                     <div>
                         <strong>Trust Information</strong>
                         <div style="font-size:11.5px; margin-top:4px">
