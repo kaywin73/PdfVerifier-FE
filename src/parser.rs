@@ -111,33 +111,66 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
 
                             let signature_type = String::from_utf8_lossy(type_name).into_owned();
                             let sub_filter = dict.get(b"SubFilter")
-                                .and_then(|o| o.as_name())
                                 .ok()
-                                .map(|n| String::from_utf8_lossy(n).into_owned());
+                                .and_then(|o| match o {
+                                    Object::Name(n) => Some(String::from_utf8_lossy(n).into_owned()),
+                                    Object::Reference(id) => doc.get_object(*id).ok().and_then(|ro| ro.as_name().ok()).map(|n| String::from_utf8_lossy(n).into_owned()),
+                                    _ => None,
+                                });
 
                             let location = dict.get(b"Location")
-                                .and_then(|o| o.as_str())
                                 .ok()
-                                .map(|s| String::from_utf8_lossy(s).into_owned());
+                                .and_then(|o| match o {
+                                    Object::String(s, _) => Some(String::from_utf8_lossy(s).into_owned()),
+                                    Object::Reference(id) => doc.get_object(*id).ok().and_then(|ro| ro.as_str().ok()).map(|s| String::from_utf8_lossy(s).into_owned()),
+                                    _ => None,
+                                });
 
                             let reason = dict.get(b"Reason")
-                                .and_then(|o| o.as_str())
                                 .ok()
-                                .map(|s| String::from_utf8_lossy(s).into_owned());
+                                .and_then(|o| match o {
+                                    Object::String(s, _) => Some(String::from_utf8_lossy(s).into_owned()),
+                                    Object::Reference(id) => doc.get_object(*id).ok().and_then(|ro| ro.as_str().ok()).map(|s| String::from_utf8_lossy(s).into_owned()),
+                                    _ => None,
+                                });
 
                             let filter = dict.get(b"Filter")
-                                .and_then(|o| o.as_name())
                                 .ok()
-                                .map(|n| String::from_utf8_lossy(n).into_owned());
+                                .and_then(|o| match o {
+                                    Object::Name(n) => Some(String::from_utf8_lossy(n).into_owned()),
+                                    Object::Reference(id) => doc.get_object(*id).ok().and_then(|ro| ro.as_name().ok()).map(|n| String::from_utf8_lossy(n).into_owned()),
+                                    _ => None,
+                                });
 
                             let mut creation_app = None;
-                            if let Ok(prop_build) = dict.get(b"Prop_Build").and_then(|o| o.as_dict()) {
-                                if let Ok(app_dict) = prop_build.get(b"App").and_then(|o| o.as_dict()) {
-                                    creation_app = app_dict.get(b"REFull")
-                                        .or_else(|_| app_dict.get(b"Name"))
-                                        .ok()
-                                        .and_then(|o| o.as_str().ok())
-                                        .map(|s| String::from_utf8_lossy(s).into_owned());
+                            if let Ok(prop_build_obj) = dict.get(b"Prop_Build") {
+                                let prop_build_dict = match prop_build_obj {
+                                    Object::Dictionary(d) => Some(d),
+                                    Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| o.as_dict().ok()),
+                                    _ => None,
+                                };
+                                
+                                if let Some(pb) = prop_build_dict {
+                                    if let Ok(app_val) = pb.get(b"App") {
+                                        let app_dict = match app_val {
+                                            Object::Dictionary(d) => Some(d),
+                                            Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| o.as_dict().ok()),
+                                            _ => None,
+                                        };
+                                        
+                                        if let Some(ad) = app_dict {
+                                            creation_app = ad.get(b"REFull")
+                                                .or_else(|_| ad.get(b"Name"))
+                                                .ok()
+                                                .and_then(|o| {
+                                                    match o {
+                                                        Object::String(s, _) => Some(String::from_utf8_lossy(s).into_owned()),
+                                                        Object::Name(n) => Some(String::from_utf8_lossy(n).into_owned()),
+                                                        _ => None,
+                                                    }
+                                                });
+                                        }
+                                    }
                                 }
                             }
 

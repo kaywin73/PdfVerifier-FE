@@ -60,9 +60,9 @@ pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result
         .map_err(|e| format!("ASN.1 DER decode error (SignedData): {:?}", e))?;
 
     for signer_info in signed_data.signer_infos.0.as_slice().iter() {
-        let digest_alg_oid = signer_info.digest_alg.oid.to_string();
+        let mut digest_alg_oid = signer_info.digest_alg.oid.to_string();
         let signer_id = format_sid(&signer_info.sid);
-        let document_hash = hash_document(signed_content, &digest_alg_oid)?;
+        let mut document_hash = hash_document(signed_content, &digest_alg_oid)?;
 
         let mut is_integrity_ok = false;
         
@@ -82,14 +82,36 @@ pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result
         }
 
         // 2. RFC 3161 Timestamp check: Document hash is in TSTInfo.messageImprint.hashedMessage
-        if !is_integrity_ok && signed_data.encap_content_info.econtent_type.to_string() == "1.2.840.113549.1.9.16.1.4" {
+        if signed_data.encap_content_info.econtent_type.to_string() == "1.2.840.113549.1.9.16.1.4" {
             if let Some(econtent) = &signed_data.encap_content_info.econtent {
                 if let Ok(econtent_bytes) = econtent.to_der() {
-                    // TSTInfo is a SEQUENCE. We look for the document hash (OctetString) inside it.
-                    // Instead of full structure parsing, we search the econtent for the document_hash.
-                    // RFC 3161 TSTInfo contains messageImprint which contains the hashedMessage OCTET STRING.
+                    // Try to extract the OID from TSTInfo to re-hash if necessary
+                    // RFC 3161 TSTInfo: SEQUENCE { version ... messageImprint MessageImprint ... }
+                    // MessageImprint: SEQUENCE { hashAlgorithm AlgorithmIdentifier, hashedMessage OCTET STRING }
+                    
+                    // Simple heuristic: if we find the document_hash in the econtent, we are good.
                     if econtent_bytes.windows(document_hash.len()).any(|w| w == &document_hash[..]) {
                         is_integrity_ok = true;
+                    } else {
+                        // Mismatch! Let's see if there's a different hash algorithm in the econtent.
+                        // We check common OIDs as defined in this file.
+                        for test_oid_str in &[OID_SHA1, OID_SHA256, OID_SHA384, OID_SHA512] {
+                            if let Ok(oid) = der::asn1::ObjectIdentifier::new(test_oid_str) {
+                                if let Ok(oid_der) = oid.to_der() {
+                                    if econtent_bytes.windows(oid_der.len()).any(|w| w == &oid_der[..]) {
+                                        // Found a potential OID. Try to hash with it.
+                                        if let Ok(alt_hash) = hash_document(signed_content, test_oid_str) {
+                                            if econtent_bytes.windows(alt_hash.len()).any(|w| w == &alt_hash[..]) {
+                                                document_hash = alt_hash;
+                                                digest_alg_oid = test_oid_str.to_string();
+                                                is_integrity_ok = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

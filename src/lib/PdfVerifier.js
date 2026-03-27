@@ -524,6 +524,10 @@ export function renderTopStatusBar(container, data, options = {}) {
             statusClass = "invalid";
             statusText = "At least one signature is invalid.";
             statusType = "invalid";
+        } else if (overallStatus === "UNKNOWN") {
+            statusClass = "warning";
+            statusText = "At least one signature has an unsupported algorithm.";
+            statusType = "warning";
         } else if (overallStatus === "WARNING" || hasPostSigChanges) {
             statusClass = "warning";
             statusText = hasPostSigChanges 
@@ -672,13 +676,13 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
     const status = sig.status || "VALID";
     let statusType = "valid";
     if (status === "INVALID") statusType = "invalid";
-    else if (status === "WARNING") statusType = "warning";
+    else if (status === "WARNING" || status === "UNKNOWN") statusType = "warning";
     else if (status === "VALID") statusType = "valid";
 
     const baseType = isCert ? "certified" : "signature";
     const iconHtml = getIconOverlayHtml(baseType, statusType, "size-17");
 
-    const isValid = status === "VALID" || isPermitted;
+    const isValid = (status === "VALID" || isPermitted) && status !== "UNKNOWN";
 
     const signerObj = sig.signer;
     const signerName = getCN(signerObj?.subject || sig.name || `Signature ${index + 1}`);
@@ -708,7 +712,9 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
         ? "Document has not been modified since this signature was applied." 
         : "This revision of the document has not been altered. There have been subsequent changes to the document.";
     
-    if (!vriMatch) {
+    if (status === "UNKNOWN") {
+        integrityText = "Signature uses an unsupported algorithm or has a cryptographic mismatch.";
+    } else if (!vriMatch) {
         integrityText = "Document HAS been modified in an unauthorized way since this signature was applied.";
     }
 
@@ -840,7 +846,7 @@ function renderTimestampItem(parent, ts, index, reportData) {
     const status = ts.status || "VALID";
     let statusType = "valid";
     if (status === "INVALID") statusType = "invalid";
-    else if (status === "WARNING") statusType = "warning";
+    else if (status === "WARNING" || status === "UNKNOWN") statusType = "warning";
 
     const iconHtml = getIconOverlayHtml("timestamp", statusType, "size-17");
 
@@ -861,10 +867,10 @@ function renderTimestampItem(parent, ts, index, reportData) {
     
     content.innerHTML = `
         <div class="sig-detail-row">
-            <span class="detail-label">${status === "VALID" ? 'Document timestamp is valid.' : 'Document timestamp has problems.'}</span>
+            <span class="detail-label">${(status === "VALID" || status === "UNKNOWN" || status === "WARNING") ? 'Document timestamp is valid.' : 'Document timestamp has problems.'}</span>
         </div>
         <div class="sig-detail-row">
-            <span class="detail-text">${status === "INVALID" ? 'Document has been modified since this timestamp.' : 'This timestamp verifies that the document had not been modified as of the time of stamping.'}</span>
+            <span class="detail-text">${status === "UNKNOWN" ? 'Timestamp uses an unsupported algorithm or has a cryptographic mismatch.' : (status === "INVALID" ? 'Document has been modified since this timestamp.' : 'This timestamp verifies that the document had not been modified as of the time of stamping.')}</span>
         </div>
     `;
 
@@ -1024,7 +1030,17 @@ function showCertificateModal(sig, reportData) {
                 <div class="cert-details-list">${parsed.extensions.map(e => `[${e.name}] (${e.oid})\n${formatX509ExtensionValue(e.name, e.value)}`).join('\n\n')}</div>
             `;
         } else if (activeTab === 'revocation') {
-            const revInfo = certData.revocation || [];
+            let revInfo = certData.revocation || certData.revocation || [];
+            
+            // Fallback: If no certificate-specific revocation info is found,
+            // try to pull from the parent signer's flat revocation list.
+            if (revInfo.length === 0 && sig.signer?.revocation) {
+                // If this is the leaf certificate, show all revocations for the signer
+                if (selectedCertIndex === 0) {
+                    revInfo = sig.signer.revocation;
+                }
+            }
+            
             if (revInfo.length > 0) {
                 html += `<div class="revocation-list">`;
                 revInfo.forEach(rev => {
@@ -1045,7 +1061,7 @@ function showCertificateModal(sig, reportData) {
                             <div class="detail-text" style="margin-bottom:10px">
                                 The selected certificate is considered valid because it does not appear in the 
                                 <strong>${type === 'CRL' ? 'Certificate Revocation List (CRL)' : 'OCSP Response'}</strong> 
-                                that is contained in the ${byteLoc === 'DSS' ? 'embedded DSS storage' : 'local cache'}.
+                                that is contained in the ${byteLoc === 'DSS' ? 'embedded DSS storage' : (byteLoc === 'CMS' ? 'embedded in CMS' : 'local cache')}.
                             </div>
                             <div class="detail-subtext">
                                 The ${type} was signed by <strong>"${signerName}"</strong>${dateLine}.
@@ -1224,10 +1240,21 @@ function showSignatureDetailsModal(sig, reportData) {
         <div class="modal-content">
             <div class="detail-label">Validity Summary:</div>
             <div class="detail-text" style="margin-bottom:15px">
-                ${(sig.status === "VALID" || sig.status === "WARNING" || sig.validity === true || (sig.vri_match !== false && sig.vriMatch !== false && (sig.is_latest_revision === false || sig.isLatestRevision === false))) 
-                    ? 'This signature is valid and the document has not been tampered with.' 
-                    : 'This signature has problems or is invalid.'}
+                ${(sig.status === "UNKNOWN")
+                    ? 'This signature uses an unsupported algorithm or has a cryptographic mismatch.'
+                    : ((sig.status === "VALID" || sig.status === "WARNING" || sig.validity === true || (sig.vri_match !== false && sig.vriMatch !== false && (sig.is_latest_revision === false || sig.isLatestRevision === false))) 
+                        ? 'This signature is valid and the document has not been tampered with.' 
+                        : 'This signature has problems or is invalid.')}
             </div>
+
+            ${(sig.validation?.findings?.length > 0) ? `
+                <div class="sig-detail-row" style="margin-top:10px; padding:10px; background:rgba(237,137,54,0.1); border-radius:4px; border-left: 3px solid #ed8936">
+                    <div class="detail-label" style="color:#ed8936; margin-bottom:5px">Problems identified:</div>
+                    <ul style="margin:0; padding-left:18px; font-size:12px; color:#ed8936">
+                        ${sig.validation.findings.map(f => `<li>${f.message}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : ''}
             
             <div class="cert-prop-grid">
                 <span class="cert-prop-label">Signature Type:</span><span class="cert-prop-value">${sig.signature_type || sig.signatureType || 'PAdES'}</span>
