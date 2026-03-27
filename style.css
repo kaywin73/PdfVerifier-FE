@@ -126,8 +126,9 @@ header h1 {
 .pdf-drawer {
     position: absolute;
     top: 0;
-    right: -450px;
-    width: 450px;
+    right: -100%;
+    width: 100%;
+    max-width: 450px;
     height: 100%;
     background: white;
     box-shadow: -4px 0 15px rgba(0,0,0,0.1);
@@ -136,6 +137,12 @@ header h1 {
     flex-direction: column;
     transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border-left: 1px solid #e2e8f0;
+}
+
+@media (min-width: 640px) {
+    .pdf-drawer {
+        right: -450px;
+    }
 }
 
 .pdf-drawer.open {
