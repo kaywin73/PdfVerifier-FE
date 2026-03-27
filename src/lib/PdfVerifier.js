@@ -512,6 +512,12 @@ export function renderTopStatusBar(container, data, options = {}) {
             <span class="status-bar-text" style="font-weight:600">Unable to verify signature.</span>
         `;
     } else {
+        const signatures = data.signatures || [];
+        if (signatures.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
         const overallStatus = data.document?.overall_status || data.document?.overallStatus;
         const postSigChanges = data.document?.filled_fields_after_last_sig || data.document?.filledFieldsAfterLastSig || [];
         const hasPostSigChanges = postSigChanges.length > 0;
@@ -519,6 +525,11 @@ export function renderTopStatusBar(container, data, options = {}) {
         let statusClass = "valid";
         let statusText = "Signed and all signatures are valid.";
         let statusType = "valid";
+
+        if (signatures.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
 
         if (overallStatus === "TOTAL_FAILED") {
             statusClass = "invalid";
@@ -762,9 +773,20 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
         content.insertAdjacentHTML('beforeend', `<div class="sig-detail-row"><span class="detail-text"><strong>Permissions:</strong> ${mdpDesc}</span></div>`);
     }
 
+    // Trust Status Logic - Handle both camelCase and snake_case for API/WASM resilience
+    const trust = sig.signer?.trust;
+    const isTrusted = trust?.is_trusted === true || trust?.isTrusted === true || sig.trustedIdentity === true;
+    const trustSource = trust?.source || sig.trustSourceName || sig.trust_source_name;
+    const trustType = trust?.type || sig.trustSourceType || sig.trust_source_type;
+
+    let trustText = `Signer's identity is ${isTrusted ? 'valid' : 'not verified'}.`;
+    if (isTrusted && trustSource && trustType === 'BUILT-IN') {
+        trustText = `Source of Trust obtained from ${trustSource}.`;
+    }
+
     content.insertAdjacentHTML('beforeend', `
         <div class="sig-detail-row">
-            <span class="detail-text">Signer's identity is ${(sig.signer?.trust?.isTrusted === true || sig.trustedIdentity === true) ? 'valid' : 'not verified'}.</span>
+            <span class="detail-text">${trustText}</span>
         </div>
     `);
 
@@ -873,6 +895,23 @@ function renderTimestampItem(parent, ts, index, reportData) {
             <span class="detail-text">${status === "UNKNOWN" ? 'Timestamp uses an unsupported algorithm or has a cryptographic mismatch.' : (status === "INVALID" ? 'Document has been modified since this timestamp.' : 'This timestamp verifies that the document had not been modified as of the time of stamping.')}</span>
         </div>
     `;
+
+    // TSA Trust Status
+    const tsTrust = ts.tsa?.trust;
+    const isTsTrusted = tsTrust?.is_trusted === true || tsTrust?.isTrusted === true || ts.trustedIdentity === true;
+    const tsTrustSource = tsTrust?.source || ts.trustSourceName || ts.trust_source_name;
+    const tsTrustType = tsTrust?.type || ts.trustSourceType || ts.trust_source_type;
+
+    let tsTrustText = `TSA identity is ${isTsTrusted ? 'valid' : 'not verified'}.`;
+    if (isTsTrusted && tsTrustSource && tsTrustType === 'BUILT-IN') {
+        tsTrustText = `Source of Trust obtained from ${tsTrustSource}.`;
+    }
+
+    content.insertAdjacentHTML('beforeend', `
+        <div class="sig-detail-row">
+            <span class="detail-text">${tsTrustText}</span>
+        </div>
+    `);
 
     const clickableStatus = document.createElement('div');
     clickableStatus.className = 'sig-detail-row clickable-status-group';
@@ -1099,7 +1138,9 @@ function showCertificateModal(sig, reportData) {
                         <strong>Trust Information</strong>
                         <div style="font-size:11.5px; margin-top:4px">
                             ${isTrusted 
-                                ? 'The certificate is trusted and the chain is valid. It has been verified against your trust list.' 
+                                ? (sig.signer?.trust?.type === 'BUILT-IN' || sig.trustSourceType === 'BUILT-IN'
+                                    ? `Source of Trust obtained from ${sig.signer?.trust?.source || sig.trustSourceName || 'Adobe Approved Trust List (AATL)'}.`
+                                    : `The certificate is trusted and has been verified against ${sig.signer?.trust?.source || sig.trustSourceName || 'your trust list'}.`)
                                 : 'The certificate is not trusted. The identity of the signer could not be verified.'}
                         </div>
                     </div>
@@ -1110,7 +1151,8 @@ function showCertificateModal(sig, reportData) {
                 <div class="sig-detail-row" style="margin-top:20px">
                     <div class="detail-label">Trust Details:</div>
                     <div class="detail-text">
-                        The trust level was determined using the <strong>${sig.signer?.trust?.source || 'Default'}</strong> policy.
+                        The trust level was determined using the <strong>${sig.signer?.trust?.source || sig.trustSourceName || 'Default'}</strong> policy.
+                        ${(sig.signer?.trust?.type || sig.trustSourceType) ? `<br/><span style="font-size:10px; opacity:0.7">Source Type: ${sig.signer?.trust?.type || sig.trustSourceType}</span>` : ''}
                     </div>
                 </div>
             `;

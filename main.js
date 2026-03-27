@@ -40,7 +40,9 @@ async function processFile(file) {
     pdfPreview.src = fileUrl;
     dropzoneContainer.classList.add('hidden');
     pdfPreview.classList.remove('hidden');
-    if (signatureDrawer) signatureDrawer.classList.remove('open'); // Close drawer if open
+    if (signatureDrawer) signatureDrawer.classList.remove('open'); 
+    statusBarContainer.classList.add('hidden');
+    statusBarContainer.innerHTML = '';
 
     try {
         // 2. Extract Metadata via Wasm (locally)
@@ -48,17 +50,22 @@ async function processFile(file) {
         const wasmResult = await verifyPdf(arrayBuffer, file.name);
         console.log("Wasm Extraction Result:", wasmResult);
 
-        if (!wasmResult.signatures || wasmResult.signatures.length === 0) {
-            // Not a signed PDF
-            statusBarContainer.innerHTML = ''; // Or show "No signatures found"
+        const signers = (wasmResult.signatures || wasmResult.signers || [])
+            .filter(s => s.cms_bytes_base64 || s.cmsBytesBase64);
+        
+        if (signers.length === 0) {
+            // Not a signed PDF - hide the status bar
+            statusBarContainer.classList.add('hidden');
+            statusBarContainer.innerHTML = ''; 
             return;
         }
 
-        // 3. Show "Verifying" status bar
+        // 3. Show "Verifying" status bar and ensure it's visible
+        statusBarContainer.classList.remove('hidden');
         renderTopStatusBar(statusBarContainer, null, { isVerifying: true });
 
         // 4. Call Backend for Metadata-only Verification
-        const backendResult = await callBackendVerification(wasmResult);
+        const backendResult = await callBackendVerification(wasmResult, signers);
         console.log("Backend Verification Result:", backendResult);
 
         lastVerificationReport = backendResult.payload || backendResult;
@@ -73,21 +80,22 @@ async function processFile(file) {
 
     } catch (err) {
         console.error("Verification error:", err);
+        statusBarContainer.classList.remove('hidden');
         renderTopStatusBar(statusBarContainer, null, { isVerifying: false, hasError: true });
     }
 }
 
-async function callBackendVerification(wasmResult) {
+async function callBackendVerification(wasmResult, signers) {
     // Note: use relative URL or target your Spring Boot server
     const url = `/api/v1/verify/pdf_metadata?tenant_id=${CONFIG.TENANT_ID}&api_key_id=${CONFIG.API_KEY_ID}`;
     
     // Construct the verification request
     const requestBody = {
         pdf_filename: wasmResult.document?.fileName || wasmResult.document?.filename || "document.pdf",
-        signers: wasmResult.signers,
+        signers: signers,
         payload: {
             pdf_filename: wasmResult.document?.fileName || wasmResult.document?.filename || "document.pdf",
-            signers: wasmResult.signers,
+            signers: signers,
             total_revisions: wasmResult.document?.total_revisions || wasmResult.document?.totalRevisions || 0,
             filled_fields: wasmResult.document?.filled_fields || wasmResult.document?.filledFields || []
         }
