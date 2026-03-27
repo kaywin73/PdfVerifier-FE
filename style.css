@@ -194,8 +194,8 @@ header h1 {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -203,16 +203,28 @@ header h1 {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 4px;
+    background: transparent;
+    border-radius: 10px;
+}
+
+.signature-panel:hover::-webkit-scrollbar-thumb,
+.drawer-content:hover::-webkit-scrollbar-thumb,
+.pdf-viewer-container:hover::-webkit-scrollbar-thumb,
+.adobe-signature-panel:hover::-webkit-scrollbar-thumb {
+    background: var(--pdf-scrollbar-thumb, #cbd5e1);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
+    background: var(--pdf-scrollbar-thumb-hover, #94a3b8) !important;
 }
 
-.panel-content::-webkit-scrollbar-thumb {
-    background: #4b5563;
+/* Firefox support */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+*:hover {
+    scrollbar-color: var(--pdf-scrollbar-thumb, #cbd5e1) transparent;
 }
 
 /* Debug Panel Settings */
@@ -293,7 +305,6 @@ header h1 {
     font-size: 13.5px;
     font-weight: 500;
     margin-bottom: 8px;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 
 .adobe-status-bar.status-valid {

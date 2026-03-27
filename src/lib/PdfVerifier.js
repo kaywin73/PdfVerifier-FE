@@ -5,6 +5,86 @@ export const VERSION = "1.0.0";
 let wasmReady = false;
 let wasmModule = null;
 
+let currentConfig = {
+    theme: 'light',
+    statusBarBgColor: null,
+    statusBarTextColor: null,
+    statusBarBorderColor: null,
+    statusBarButtonBgColor: null,
+    statusBarButtonTextColor: null,
+    panelBgColor: null,
+    panelTextColor: null,
+    headerBgColor: null,
+    headerTextColor: null,
+};
+
+export function configPdfVerifier(options = {}) {
+    if (options.theme) {
+        currentConfig.theme = ['light', 'dark'].includes(options.theme) ? options.theme : 'light';
+    }
+    const keys = [
+        'statusBarBgColor', 'statusBarTextColor', 'statusBarBorderColor',
+        'statusBarButtonBgColor', 'statusBarButtonTextColor',
+        'panelBgColor', 'panelTextColor', 'headerBgColor', 'headerTextColor'
+    ];
+    keys.forEach(key => {
+        if (options[key]) currentConfig[key] = options[key];
+    });
+    
+    if (typeof document !== 'undefined') {
+        applyThemeStyles();
+    }
+}
+
+function applyThemeStyles() {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const isDark = currentConfig.theme === 'dark';
+
+    // Defaults
+    const defaults = {
+        statusBarBg: isDark ? '#2d2d2d' : '#ffffff',
+        statusBarText: isDark ? '#f3f4f6' : '#111827',
+        statusBarBorder: isDark ? '#404040' : '#e2e8f0',
+        statusBarBtnBg: '#4a90e2',
+        statusBarBtnText: '#ffffff',
+        panelBg: isDark ? '#2d2d2d' : '#ffffff',
+        panelText: isDark ? '#f3f4f6' : '#111827',
+        headerBg: isDark ? '#3d3d3d' : '#f1f3f4',
+        headerText: isDark ? '#f3f4f6' : '#5f6368',
+        muted: isDark ? '#9ca3af' : '#6b7280',
+        border: isDark ? '#404040' : '#e2e8f0',
+        itemBg: isDark ? '#2d2d2d' : '#ffffff',
+        hoverBg: isDark ? '#3d3d3d' : '#f8fafc',
+        scrollbar: isDark ? '#4b5563' : '#cbd5e1',
+        scrollbarHover: isDark ? '#718096' : '#94a3b8'
+    };
+    
+    // Apply variables
+    root.style.setProperty('--pdf-status-bar-bg', currentConfig.statusBarBgColor || defaults.statusBarBg);
+    root.style.setProperty('--pdf-status-bar-text', currentConfig.statusBarTextColor || defaults.statusBarText);
+    root.style.setProperty('--pdf-status-bar-border', currentConfig.statusBarBorderColor || defaults.statusBarBorder);
+    root.style.setProperty('--pdf-status-bar-btn-bg', currentConfig.statusBarButtonBgColor || defaults.statusBarBtnBg);
+    root.style.setProperty('--pdf-status-bar-btn-text', currentConfig.statusBarButtonTextColor || defaults.statusBarBtnText);
+    
+    root.style.setProperty('--pdf-panel-bg', currentConfig.panelBgColor || defaults.panelBg);
+    root.style.setProperty('--pdf-text-main', currentConfig.panelTextColor || defaults.panelText);
+    
+    root.style.setProperty('--pdf-header-bg', currentConfig.headerBgColor || defaults.headerBg);
+    root.style.setProperty('--pdf-header-text', currentConfig.headerTextColor || defaults.headerText);
+    
+    root.style.setProperty('--pdf-text-muted', defaults.muted);
+    root.style.setProperty('--pdf-border-color', defaults.border);
+    root.style.setProperty('--pdf-section-header-bg', currentConfig.headerBgColor || defaults.headerBg);
+    root.style.setProperty('--pdf-item-bg', defaults.itemBg);
+    root.style.setProperty('--pdf-hover-bg', defaults.hoverBg);
+    root.style.setProperty('--pdf-scrollbar-thumb', defaults.scrollbar);
+    root.style.setProperty('--pdf-scrollbar-thumb-hover', defaults.scrollbarHover);
+    
+    // For icons
+    root.style.setProperty('--pdf-icon-filter', isDark ? 'invert(1)' : 'none');
+}
+
 function formatAdobeDate(isoString) {
     if (!isoString || isoString === 'Unknown') return isoString;
     if (isoString.includes(':') && (isoString.includes('MYT') || isoString.includes('GMT') || isoString.includes('BST') || isoString.split(' ').length > 4)) {
@@ -38,13 +118,26 @@ function getCN(dn) {
 }
 
 const STYLES = `
+:root {
+    --pdf-primary: #4a90e2;
+    --pdf-primary-hover: #357abd;
+}
 .adobe-signature-panel, .pdf-signature-panel {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    color: #2D3748;
-    background: #fdfdfd;
+    color: var(--pdf-text-main);
+    background: var(--pdf-panel-bg);
     height: 100%;
     display: flex;
     flex-direction: column;
+}
+.signature-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: var(--pdf-header-bg);
+    border-bottom: 1px solid var(--pdf-border-color);
+    color: var(--pdf-header-text);
 }
 .pdf-status-bar {
     position: relative;
@@ -53,33 +146,33 @@ const STYLES = `
     align-items: center;
     gap: 12px;
     padding: 12px 20px;
-    background: #fff;
+    background: var(--pdf-status-bar-bg);
+    border: 1px solid var(--pdf-status-bar-border);
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e2e8f0;
     width: 100%;
-    color: #000;
+    color: var(--pdf-status-bar-text);
     transition: all 0.3s ease;
     box-sizing: border-box;
 }
-.pdf-status-bar.verifying { border-color: #4a90e2; }
-.pdf-status-bar.valid { border-color: #48bb78; background: rgba(240, 255, 244, 0.95); }
-.pdf-status-bar.warning { border-color: #ed8936; background: rgba(255, 250, 240, 0.95); }
-.pdf-status-bar.invalid { border-color: #f56565; background: rgba(255, 245, 245, 0.95); }
+.pdf-status-bar.verifying { }
+.pdf-status-bar.valid { background: var(--pdf-status-bar-bg); }
+.pdf-status-bar.warning { background: var(--pdf-status-bar-bg); }
+.pdf-status-bar.invalid { background: var(--pdf-status-bar-bg); }
 
 .status-bar-loader {
     width: 16px;
     height: 16px;
-    border: 2px solid #e2e8f0;
-    border-top-color: #4a90e2;
+    border: 2px solid var(--pdf-border-color);
+    border-top-color: var(--pdf-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .view-sigs-btn {
-    background: #4a90e2;
-    color: white;
+    background: var(--pdf-status-bar-btn-bg);
+    color: var(--pdf-status-bar-btn-text);
     border: none;
     padding: 6px 14px;
     border-radius: 20px;
@@ -89,7 +182,7 @@ const STYLES = `
     transition: background 0.2s;
     margin-left: auto;
 }
-.view-sigs-btn:hover { background: #357abd; }
+.view-sigs-btn:hover { opacity: 0.9; }
 .adobe-status-bar {
     display: flex;
     align-items: center;
@@ -97,11 +190,10 @@ const STYLES = `
     font-size: 13.5px;
     font-weight: 500;
     margin-bottom: 8px;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
 }
-.adobe-status-bar.status-valid { background-color: #f1fcf1; color: #1a5e1a; }
-.adobe-status-bar.status-warning { background-color: #fff9eb; color: #856404; }
-.adobe-status-bar.status-invalid { background-color: #fff5f5; color: #a71d1d; }
+.adobe-status-bar.status-valid { background-color: rgba(72, 187, 120, 0.1); color: #48bb78; }
+.adobe-status-bar.status-warning { background-color: rgba(237, 137, 54, 0.1); color: #ed8936; }
+.adobe-status-bar.status-invalid { background-color: rgba(245, 101, 101, 0.1); color: #f56565; }
 .status-bar-icon {
     width: 17px;
     height: 17px;
@@ -112,16 +204,16 @@ const STYLES = `
 .status-bar-text { font-size: 13.5px; font-weight: 600; }
 .status-bar-subtext { font-size: 12px; opacity: 0.8; margin-top: 2px; }
 .adobe-section-header {
-    background: #f1f3f4;
-    padding: 6px 16px;
+    background: var(--pdf-header-bg);
+    padding: 8px 20px;
     font-size: 11px;
     font-weight: 700;
+    color: var(--pdf-header-text);
     text-transform: uppercase;
-    color: #5f6368;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
 }
-.adobe-sig-item { border-bottom: 1px solid #e2e8f0; background: white; }
-.adobe-sig-item.is-cert { border-left: 4px solid #4a90e2; }
+.adobe-sig-item { border-bottom: 1px solid var(--pdf-border-color); background: var(--pdf-item-bg); }
+.adobe-sig-item.is-cert { border-left: 4px solid var(--pdf-primary); }
 .adobe-sig-header {
     display: flex;
     align-items: center;
@@ -132,88 +224,89 @@ const STYLES = `
 .sig-header-main { display: flex; align-items: center; }
 .sig-icon { width: 14px; height: 14px; margin-right: 10px; flex-shrink: 0; }
 .sig-header-text { display: flex; flex-direction: column; gap: 2px; }
-.sig-title { font-size: 13px; font-weight: 600; line-height: 1.4; color: #1a202c; }
-.sig-field-name { font-size: 11px; color: #666; font-weight: normal; }
-.chevron-icon { width: 16px; height: 16px; color: #a0aec0; transition: transform 0.2s; flex-shrink: 0; }
+.sig-title { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--pdf-text-main); }
+.sig-field-name { font-size: 11px; color: var(--pdf-text-muted); font-weight: normal; }
+.chevron-icon { width: 16px; height: 16px; color: var(--pdf-text-muted); transition: transform 0.2s; flex-shrink: 0; }
 .is-expanded .chevron-icon { transform: rotate(90deg); }
 .adobe-sig-content { display: none; padding: 0 16px 16px 40px; }
 .is-expanded .adobe-sig-content { display: block; }
 .sig-detail-row { margin-top: 10px; }
 .clickable-status-group { cursor: pointer; padding: 4px; margin: -4px; border-radius: 4px; transition: background 0.2s; }
-.clickable-status-group:hover { background: #f0f7ff; }
-.clickable-label { color: #0066cc; text-decoration: underline; text-underline-offset: 2px; }
-.clickable-text { color: #4a5568 !important; }
-.detail-label { font-size: 12px; font-weight: 700; color: #2d3748; margin-bottom: 3px; display: block; }
-.detail-text { font-size: 13px; color: #4a5568; line-height: 1.5; }
-.detail-subtext { font-size: 12px; color: #718096; margin-top: 3px; font-style: italic; }
-.form-fills { margin-top: 12px; padding: 10px; background: #f7fafc; border-radius: 4px; border-left: 3px solid #cbd5e0; }
-.fill-list { margin: 6px 0 0 0; padding-left: 20px; font-size: 12px; color: #4a5568; }
+.clickable-status-group:hover { background: var(--pdf-hover-bg); }
+.clickable-label { color: var(--pdf-primary); text-decoration: underline; text-underline-offset: 2px; }
+.clickable-text { color: var(--pdf-text-main) !important; }
+.detail-label { font-size: 12px; font-weight: 700; color: var(--pdf-text-main); margin-bottom: 3px; display: block; }
+.detail-text { font-size: 13px; color: var(--pdf-text-main); line-height: 1.5; }
+.detail-subtext { font-size: 12px; color: var(--pdf-text-muted); margin-top: 3px; font-style: italic; }
+.form-fills { margin-top: 12px; padding: 10px; background: var(--pdf-hover-bg); border-radius: 4px; border-left: 3px solid var(--pdf-border-color); }
+.fill-list { margin: 6px 0 0 0; padding-left: 20px; font-size: 12px; color: var(--pdf-text-main); }
 .fill-list li { margin-bottom: 4px; }
-.cert-link { color: #3182ce; text-decoration: none; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-block; margin-top: 8px; border-bottom: 1px dashed transparent; }
-.cert-link:hover { border-bottom-color: #3182ce; }
+.cert-link { color: var(--pdf-primary); text-decoration: none; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-block; margin-top: 8px; border-bottom: 1px dashed transparent; }
+.cert-link:hover { border-bottom-color: var(--pdf-primary); }
 
 /* Modal Styles */
-.adobe-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 10000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-.adobe-modal { background: #fff; width: 550px; max-height: 85vh; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #ccc; }
-.modal-header { padding: 12px 16px; background: #f3f3f3; border-bottom: 1px solid #ddd; display: flex; align-items: center; justify-content: space-between; }
-.modal-title { font-size: 14px; font-weight: 600; color: #333; }
-.modal-close { cursor: pointer; font-size: 20px; color: #666; font-weight: bold; padding: 0 8px; }
-.modal-tabs { display: flex; background: #f3f3f3; border-bottom: 1px solid #ddd; padding: 0 16px; }
-.modal-tab { padding: 10px 14px; font-size: 12.5px; color: #555; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
-.modal-tab:hover { background: #e8e8e8; }
-.modal-tab.active { color: #000; border-bottom-color: #4a90e2; font-weight: 600; }
-.modal-content { flex: 1; padding: 20px; overflow-y: auto; background: #fff; min-height: 350px; }
-.modal-footer { padding: 12px 16px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; background: #fdfdfd; }
-.adobe-btn { background: #e1e1e1; border: 1px solid #bbb; padding: 6px 20px; font-size: 12px; border-radius: 4px; cursor: pointer; color: #333; }
-.adobe-btn:hover { background: #d0d0d0; }
-.adobe-btn-primary { background: #4a90e2; color: #fff; border-color: #357abd; }
-.adobe-btn-outline { color: #4a90e2; border-color: #4a90e2; background: #fff; }
+.adobe-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+.adobe-modal { background: var(--pdf-item-bg); color: var(--pdf-text-main); width: 550px; max-height: 85vh; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--pdf-border-color); }
+.modal-header { padding: 12px 16px; background: var(--pdf-section-header-bg); border-bottom: 1px solid var(--pdf-border-color); display: flex; align-items: center; justify-content: space-between; }
+.modal-title { font-size: 14px; font-weight: 600; color: var(--pdf-text-main); }
+.modal-close { cursor: pointer; font-size: 20px; color: var(--pdf-text-muted); font-weight: bold; padding: 0 8px; }
+.modal-tabs { display: flex; background: var(--pdf-section-header-bg); border-bottom: 1px solid var(--pdf-border-color); padding: 0 16px; }
+.modal-tab { padding: 10px 14px; font-size: 12.5px; color: var(--pdf-text-muted); cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
+.modal-tab:hover { background: var(--pdf-hover-bg); }
+.modal-tab.active { color: var(--pdf-text-main); border-bottom-color: var(--pdf-primary); font-weight: 600; }
+.modal-content { flex: 1; padding: 20px; overflow-y: auto; background: var(--pdf-item-bg); min-height: 350px; }
+.modal-footer { padding: 12px 16px; border-top: 1px solid var(--pdf-border-color); display: flex; justify-content: flex-end; background: var(--pdf-section-header-bg); }
+.adobe-btn { background: var(--pdf-hover-bg); border: 1px solid var(--pdf-border-color); padding: 6px 20px; font-size: 12px; border-radius: 4px; cursor: pointer; color: var(--pdf-text-main); }
+.adobe-btn:hover { background: var(--pdf-section-header-bg); }
+.adobe-btn-primary { background: var(--pdf-primary); color: #fff; border-color: var(--pdf-primary-hover); }
+.adobe-btn-outline { color: var(--pdf-primary); border-color: var(--pdf-primary); background: transparent; }
 
 /* Cert Viewer Helpers */
-.cert-tree { margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
-.cert-tree-item { padding: 8px 12px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; color: #2D3748; }
+.cert-tree { margin-bottom: 20px; border: 1px solid var(--pdf-border-color); border-radius: 4px; overflow: hidden; }
+.cert-tree-item { padding: 8px 12px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid var(--pdf-border-color); display: flex; align-items: center; gap: 8px; color: var(--pdf-text-main); }
 .cert-tree-item:last-child { border-bottom: none; }
-.cert-tree-item.active { background: #e8f2ff; font-weight: 600; }
+.cert-tree-item.active { background: var(--pdf-hover-bg); font-weight: 600; }
 .cert-prop-grid { display: grid; grid-template-columns: 110px 1fr; gap: 8px 16px; font-size: 12.5px; line-height: 1.5; }
-.cert-prop-label { color: #666; font-weight: 500; }
-.cert-prop-value { color: #222; word-break: break-all; }
-.cert-details-list { font-family: 'Consolas', monospace; font-size: 11px; white-space: pre-wrap; color: #444; background: #f9f9f9; padding: 10px; border-radius: 4px; border: 1px solid #eee; margin-top: 10px; max-height: 200px; overflow-y: auto; }
-.cert-status-box { margin-bottom: 15px; padding: 12px; border-radius: 4px; border: 1px solid transparent; display: flex; align-items: flex-start; gap: 12px; }
-.cert-status-valid { background: #f1fcf1; border-color: #c6e9c6; color: #1a5e1a; }
-.cert-status-warning { background: #fff9eb; border-color: #ffeeba; color: #856404; }
+.cert-prop-label { color: var(--pdf-text-muted); font-weight: 500; }
+.cert-prop-value { color: var(--pdf-text-main); word-break: break-all; }
+.cert-details-list { font-family: 'Consolas', monospace; font-size: 11px; white-space: pre-wrap; color: var(--pdf-text-main); background: var(--pdf-hover-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--pdf-border-color); margin-top: 10px; max-height: 200px; overflow-y: auto; }
+.cert-status-box { margin-bottom: 12px; padding: 10px; border-radius: 4px; border: 1px solid transparent; display: flex; align-items: flex-start; gap: 10px; }
+.cert-status-valid { background: rgba(72, 187, 120, 0.1); border-color: rgba(72, 187, 120, 0.2); color: #48bb78; }
+.cert-status-warning { background: rgba(237, 137, 54, 0.1); border-color: rgba(237, 137, 54, 0.2); color: #ed8936; }
 .revocation-item { padding: 10px 0; }
-.modal-hr { border: 0; border-top: 1px solid #eee; margin: 10px 0; }
+.modal-hr { border: 0; border-top: 1px solid var(--pdf-border-color); margin: 10px 0; }
 
 /* Footer Styles */
 .adobe-panel-footer {
     padding: 16px;
-    background: #fdfdfd;
-    border-top: 1px solid #e2e8f0;
+    background: var(--pdf-section-header-bg);
+    border-top: 1px solid var(--pdf-border-color);
     font-size: 11px;
-    color: #718096;
+    color: var(--pdf-text-muted);
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 .footer-row { display: flex; align-items: center; justify-content: space-between; }
-.footer-label { font-weight: 600; color: #4a5568; margin-right: 4px; }
+.footer-label { font-weight: 600; color: var(--pdf-text-main); margin-right: 4px; }
 .verification-code-container {
     display: flex;
     align-items: center;
-    background: #edf2f7;
+    background: var(--pdf-hover-bg);
     padding: 4px 8px;
     border-radius: 4px;
     font-family: 'Consolas', monospace;
     font-size: 10px;
+    color: var(--pdf-text-main);
 }
 .copy-btn {
     margin-left: 8px;
     cursor: pointer;
-    color: #4a90e2;
+    color: var(--pdf-primary);
     display: flex;
     align-items: center;
 }
-.copy-btn:hover { color: #357abd; }
+.copy-btn:hover { color: var(--pdf-primary-hover); }
 .branding { text-align: center; margin-top: 4px; font-style: italic; opacity: 0.8; }
 
 /* SVG Overlay Styles */
@@ -231,6 +324,7 @@ const STYLES = `
     width: 100%;
     height: 100%;
     display: block;
+    filter: var(--pdf-icon-filter);
 }
 .sig-status-icon {
     position: absolute;
@@ -239,10 +333,56 @@ const STYLES = `
     width: 60%;
     height: 60%;
 }
+
+/* Custom Scrollbar */
+.pdf-signature-panel::-webkit-scrollbar, 
+.pdf-viewer-container::-webkit-scrollbar,
+.drawer-content::-webkit-scrollbar,
+.modal-content::-webkit-scrollbar,
+.cert-details-list::-webkit-scrollbar,
+.pdf-status-bar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.pdf-signature-panel::-webkit-scrollbar-track,
+.pdf-viewer-container::-webkit-scrollbar-track,
+.drawer-content::-webkit-scrollbar-track,
+.modal-content::-webkit-scrollbar-track,
+.cert-details-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.pdf-signature-panel::-webkit-scrollbar-thumb,
+.pdf-viewer-container::-webkit-scrollbar-thumb,
+.drawer-content::-webkit-scrollbar-thumb,
+.modal-content::-webkit-scrollbar-thumb,
+.cert-details-list::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 10px;
+}
+.pdf-signature-panel:hover::-webkit-scrollbar-thumb,
+.pdf-viewer-container:hover::-webkit-scrollbar-thumb,
+.drawer-content:hover::-webkit-scrollbar-thumb,
+.modal-content:hover::-webkit-scrollbar-thumb,
+.cert-details-list:hover::-webkit-scrollbar-thumb {
+    background: var(--pdf-scrollbar-thumb);
+}
+.pdf-signature-panel::-webkit-scrollbar-thumb:hover,
+.pdf-viewer-container::-webkit-scrollbar-thumb:hover,
+.drawer-content::-webkit-scrollbar-thumb:hover,
+.modal-content::-webkit-scrollbar-thumb:hover,
+.cert-details-list::-webkit-scrollbar-thumb:hover {
+    background: var(--pdf-scrollbar-thumb-hover);
+}
+/* Firefox support */
+.pdf-signature-panel, .pdf-viewer-container, .drawer-content, .modal-content, .cert-details-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--pdf-scrollbar-thumb) transparent;
+}
 `;
 
 function injectStyles() {
     if (typeof document === 'undefined') return;
+    applyThemeStyles();
     const id = 'pdf-verifier-styles';
     if (document.getElementById(id)) return;
     const style = document.createElement('style');
@@ -479,7 +619,7 @@ export function renderSignaturePanel(container, data) {
     
     footer.innerHTML = `
         <div class="footer-row">
-            <div><span class="footer-label">Checked on:</span>${vTime}</div>
+            <div><span class="footer-label">Last checked on:</span>${vTime}</div>
         </div>
         <div class="footer-row">
             <div style="display:flex; align-items:center;">
@@ -717,7 +857,7 @@ function renderTimestampItem(parent, ts, index, reportData) {
             <span class="detail-label">${status === "VALID" ? 'Document timestamp is valid.' : 'Document timestamp has problems.'}</span>
         </div>
         <div class="sig-detail-row">
-            <span class="detail-text">${status === "INVALID" ? 'Document HAS been modified since this timestamp.' : 'This timestamp verifies that the document had not been modified as of the time of stamping.'}</span>
+            <span class="detail-text">${status === "INVALID" ? 'Document has been modified since this timestamp.' : 'This timestamp verifies that the document had not been modified as of the time of stamping.'}</span>
         </div>
     `;
 
@@ -833,8 +973,13 @@ function showCertificateModal(sig, reportData) {
         reversedChain.forEach((c, i) => {
             const originalIdx = chain.length - 1 - i;
             const name = getCN(c.subject) || (originalIdx === 0 ? "Signer" : (originalIdx === chain.length - 1 ? "Root" : "Intermediate"));
-            html += `<div class="cert-tree-item ${originalIdx === selectedCertIndex ? 'active' : ''}" data-idx="${originalIdx}">
-                        ${name}
+            const padding = 12 + (i * 18);
+            const symbol = i > 0 ? '<span style="opacity:0.5; margin-right:6px">└─</span>' : '';
+            
+            html += `<div class="cert-tree-item ${originalIdx === selectedCertIndex ? 'active' : ''}" 
+                          data-idx="${originalIdx}" 
+                          style="padding-left: ${padding}px">
+                        ${symbol}${name}
                     </div>`;
         });
         html += `</div>`;
@@ -844,7 +989,7 @@ function showCertificateModal(sig, reportData) {
             const isCert = sig.is_certification === true || sig.isCertification === true;
             const statusType = isTrusted ? 'valid' : 'warning';
             const baseType = isCert ? 'certified' : 'signature';
-            const iconHtml = getIconOverlayHtml(baseType, statusType, "size-29");
+            const iconHtml = getIconOverlayHtml(baseType, statusType, "size-22");
 
             html += `
                 <div class="cert-status-box ${isTrusted ? 'cert-status-valid' : 'cert-status-warning'}">
@@ -869,7 +1014,7 @@ function showCertificateModal(sig, reportData) {
                     <span class="cert-prop-label">Signature Alg:</span><span class="cert-prop-value">${parsed.sig_algo}</span>
                     <span class="cert-prop-label">Public Key:</span><span class="cert-prop-value">${parsed.public_key}</span>
                 </div>
-                <div class="cert-details-list">${parsed.extensions.map(e => `[${e.name}] (${e.oid})\n${e.value}`).join('\n\n')}</div>
+                <div class="cert-details-list">${parsed.extensions.map(e => `[${e.name}] (${e.oid})\n${formatX509ExtensionValue(e.name, e.value)}`).join('\n\n')}</div>
             `;
         } else if (activeTab === 'revocation') {
             const revInfo = certData.revocation || [];
@@ -922,10 +1067,10 @@ function showCertificateModal(sig, reportData) {
             const isCert = sig.is_certification === true || sig.isCertification === true;
             const statusType = isTrusted ? 'valid' : 'warning';
             const baseType = isCert ? 'certified' : 'signature';
-            const iconHtml = getIconOverlayHtml(baseType, statusType, "size-24");
+            const iconHtml = getIconOverlayHtml(baseType, statusType, "size-22");
 
             html += `
-                <div class="cert-status-box ${isTrusted ? 'cert-status-valid' : 'cert-status-warning'}" style="margin-bottom:20px">
+                <div class="cert-status-box ${isTrusted ? 'cert-status-valid' : 'cert-status-warning'}" style="margin-bottom:15px">
                     ${iconHtml}
                     <div>
                         <strong>Trust Information</strong>
@@ -947,10 +1092,14 @@ function showCertificateModal(sig, reportData) {
                 </div>
             `;
         } else if (activeTab === 'policies') {
-            const policies = parsed.extensions.find(e => e.name === "Certificate Policies");
+            const policiesExt = parsed.extensions.find(e => e.name === "Certificate Policies");
+            let policiesContent = 'No specific policies found.';
+            if (policiesExt) {
+                policiesContent = formatX509ExtensionValue(policiesExt.name, policiesExt.value);
+            }
             html += `
                 <div class="detail-label">Certificate Policies:</div>
-                <div class="detail-text">${policies ? policies.value : 'No specific policies found.'}</div>
+                <div class="detail-text" style="white-space: pre-wrap">${policiesContent}</div>
                 <div class="sig-detail-row" style="margin-top:20px">
                     <div class="detail-label">Legal Notices:</div>
                     <div class="detail-text">The use of this certificate is subject to the Issuer's Certificate Practice Statement (CPS).</div>
@@ -989,6 +1138,66 @@ function showCertificateModal(sig, reportData) {
     renderActiveTab();
 }
 
+function formatX509ExtensionValue(name, value) {
+    if (!value) return "";
+    
+    // Handle Certificate Policies specifically to extract OIDs and URLs
+    if (name === "Certificate Policies" || value.includes("CertificatePolicies")) {
+        // Try to extract OIDs (e.g. OID(1.2.3.4)) and URL qualifiers
+        const oids = value.match(/OID\(([\d\.]+)\)/g) || [];
+        const dataMatches = value.match(/qualifier:\s*\[([\d,\s]+)\]/g) || [];
+        
+        let output = "";
+        oids.forEach((oid, idx) => {
+            output += `Policy: ${oid.replace('OID(', '').replace(')', '')}\n`;
+            if (dataMatches[idx]) {
+                const inner = dataMatches[idx].match(/\[([\d,\s]+)\]/);
+                if (inner && inner[1]) {
+                    const bytes = inner[1].split(',').map(s => parseInt(s.trim()));
+                    const isPrintable = bytes.every(b => (b >= 32 && b <= 126) || b === 10 || b === 13);
+                    if (isPrintable) {
+                        const str = String.fromCharCode(...bytes);
+                        // Often prepended with some length bytes if ASN.1 IA5String
+                        const urlMatch = str.match(/(https?:\/\/[^\s]+)/);
+                        output += `  Qualifier: ${urlMatch ? urlMatch[1] : str.replace(/[^\x20-\x7E]/g, '')}\n`;
+                    }
+                }
+            }
+            output += "\n";
+        });
+        if (output) return output.trim();
+    }
+
+    // Convert comma-separated number array [83, 252, ...] to hex
+    if (value.includes('[') && value.includes(']')) {
+        const match = value.match(/\[([\d,\s]+)\]/);
+        if (match && match[1]) {
+            const bytes = match[1].split(',').map(s => parseInt(s.trim()));
+            if (!bytes.some(isNaN)) {
+                return bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+            }
+        }
+    }
+    
+    // Clean up DirectoryName(X509Name { ... }) and similar complex Rust debug strings
+    if (value.includes('(') && value.includes('{')) {
+        const dataMatch = value.match(/data:\s*\[([\d,\s]+)\]/);
+        if (dataMatch && dataMatch[1]) {
+            const bytes = dataMatch[1].split(',').map(s => parseInt(s.trim()));
+            if (!bytes.some(isNaN)) {
+                const isPrintable = bytes.every(b => (b >= 32 && b <= 126) || b === 10 || b === 13);
+                if (isPrintable && bytes.length > 0) {
+                    return String.fromCharCode(...bytes);
+                }
+                return bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+            }
+        }
+        return value.replace(/^[A-Za-z]+\((.*)\)$/, '$1').replace(/^X509Name\s*\{(.*)\}$s/, '$1').trim();
+    }
+    
+    return value;
+}
+
 function showSignatureDetailsModal(sig, reportData) {
     const overlay = document.createElement('div');
     overlay.className = 'adobe-modal-overlay';
@@ -1008,23 +1217,30 @@ function showSignatureDetailsModal(sig, reportData) {
         <div class="modal-content">
             <div class="detail-label">Validity Summary:</div>
             <div class="detail-text" style="margin-bottom:15px">
-                ${sig.status === "VALID" || sig.validity === true ? 'This signature is valid and the document has not been tampered with.' : 'This signature has problems or is invalid.'}
+                ${(sig.status === "VALID" || sig.status === "WARNING" || sig.validity === true || (sig.vri_match !== false && sig.vriMatch !== false && (sig.is_latest_revision === false || sig.isLatestRevision === false))) 
+                    ? 'This signature is valid and the document has not been tampered with.' 
+                    : 'This signature has problems or is invalid.'}
             </div>
             
             <div class="cert-prop-grid">
                 <span class="cert-prop-label">Signature Type:</span><span class="cert-prop-value">${sig.signature_type || sig.signatureType || 'PAdES'}</span>
-                <span class="cert-prop-label">PAdES Level:</span><span class="cert-prop-value">${sig.pades_level || sig.padesLevel || sig.level || 'B-B'}</span>
+                ${(sig.signature_type !== 'TSA' && sig.signatureType !== 'TSA') ? `<span class="cert-prop-label">PAdES Level:</span><span class="cert-prop-value">${sig.pades_level || sig.padesLevel || sig.level || 'B-B'}</span>` : ''}
                 <span class="cert-prop-label">Digest Algo:</span><span class="cert-prop-value">${details.message_digest_algo || details.messageDigestAlgo || 'SHA-256'}</span>
                 <span class="cert-prop-label">Signature Algo:</span><span class="cert-prop-value">${details.signature_algo || details.signatureAlgo || 'RSA'}</span>
             </div>
 
-            ${sig.signatureTimestamp ? `
+            ${(sig.signatureTimestamp || sig.signature_timestamp) ? `
                 <div class="sig-detail-row" style="margin-top:20px; padding-top:15px; border-top: 1px solid #eee">
                     <div class="detail-label">Timestamp Details:</div>
-                    <div class="detail-text">This signature includes an embedded timestamp from <strong>${sig.signatureTimestamp.tsaName || 'TSA'}</strong>.</div>
-                    <button class="adobe-btn adobe-btn-outline" id="tsaCertBtn" style="margin-top:8px; font-size:11.5px">
-                        View TSA Certificate...
-                    </button>
+                    <div class="detail-text">This signature includes an embedded timestamp from <strong>${(sig.signatureTimestamp || sig.signature_timestamp).tsaName || (sig.signatureTimestamp || sig.signature_timestamp).tsa_name || 'TSA'}</strong>.</div>
+                    <div style="display:flex; gap:8px; margin-top:8px">
+                        <button class="adobe-btn adobe-btn-outline" id="tsaDetailsBtn" style="font-size:11.5px">
+                            View Timestamp Properties...
+                        </button>
+                        <button class="adobe-btn adobe-btn-outline" id="tsaCertBtn" style="font-size:11.5px">
+                            View TSA Certificate...
+                        </button>
+                    </div>
                 </div>
             ` : ''}
             
@@ -1044,11 +1260,27 @@ function showSignatureDetailsModal(sig, reportData) {
     modal.querySelector('.modal-close').onclick = () => overlay.remove();
     modal.querySelector('#closeBtn').onclick = () => overlay.remove();
     
-    const tsaBtn = modal.querySelector('#tsaCertBtn');
-    if (tsaBtn) {
-        tsaBtn.onclick = (e) => {
+    const tsaCertBtn = modal.querySelector('#tsaCertBtn');
+    if (tsaCertBtn) {
+        tsaCertBtn.onclick = (e) => {
             e.stopPropagation();
-            showCertificateModal({ signer: sig.signatureTimestamp.tsa }, reportData);
+            const ts = sig.signatureTimestamp || sig.signature_timestamp;
+            showCertificateModal({ signer: ts.tsa }, reportData);
+        };
+    }
+    
+    const tsaDetailsBtn = modal.querySelector('#tsaDetailsBtn');
+    if (tsaDetailsBtn) {
+        tsaDetailsBtn.onclick = (e) => {
+            e.stopPropagation();
+            const ts = sig.signatureTimestamp || sig.signature_timestamp;
+            showSignatureDetailsModal({ 
+                signer: ts.tsa, 
+                details: ts, 
+                timestampDate: ts.time, 
+                signatureType: 'TSA', 
+                status: ts.status || "VALID" 
+            }, reportData);
         };
     }
 

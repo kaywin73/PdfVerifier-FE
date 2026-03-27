@@ -5,7 +5,7 @@ import pkg from './package.json' with { type: 'json' };
 
 const { version } = pkg;
 
-const buildEnv = process.env.BUILD_ENV ? `.${process.env.BUILD_ENV}` : '';
+const buildEnv = process.env.BUILD_ENV ? `.${process.env.BUILD_ENV.trim()}` : '';
 
 export default defineConfig({
   plugins: [
