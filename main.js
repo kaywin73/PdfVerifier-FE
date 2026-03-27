@@ -73,8 +73,7 @@ async function processFile(file) {
 
     } catch (err) {
         console.error("Verification error:", err);
-        renderTopStatusBar(statusBarContainer, null, { isVerifying: false });
-        // Optionally show error in status bar
+        renderTopStatusBar(statusBarContainer, null, { isVerifying: false, hasError: true });
     }
 }
 

@@ -7,11 +7,11 @@ function AA(I, A) {
 function IA(I, A, g) {
   let Q, B;
   try {
-    const C = b(g, R.__wbindgen_malloc, R.__wbindgen_realloc), o = W, k = R.parse_pdf(I, A, C, o);
+    const C = b(g, R.__wbindgen_malloc, R.__wbindgen_realloc), o = p, k = R.parse_pdf(I, A, C, o);
     var D = k[0], E = k[1];
     if (k[3])
       throw D = 0, E = 0, P(k[2]);
-    return Q = D, B = E, l(D, E);
+    return Q = D, B = E, q(D, E);
   } finally {
     R.__wbindgen_free(Q, B, 1);
   }
@@ -19,11 +19,11 @@ function IA(I, A, g) {
 function gA(I) {
   let A, g;
   try {
-    const D = b(I, R.__wbindgen_malloc, R.__wbindgen_realloc), E = W, C = R.parse_x509(D, E);
+    const D = b(I, R.__wbindgen_malloc, R.__wbindgen_realloc), E = p, C = R.parse_x509(D, E);
     var Q = C[0], B = C[1];
     if (C[3])
       throw Q = 0, B = 0, P(C[2]);
-    return A = Q, g = B, l(Q, B);
+    return A = Q, g = B, q(Q, B);
   } finally {
     R.__wbindgen_free(A, g, 1);
   }
@@ -34,12 +34,12 @@ function BA() {
     "./pdfverifier_fe_bg.js": {
       __proto__: null,
       __wbg___wbindgen_throw_6ddd609b62940d55: function(A, g) {
-        throw new Error(l(A, g));
+        throw new Error(q(A, g));
       },
       __wbg_error_a6fa202b58aa1cd3: function(A, g) {
         let Q, B;
         try {
-          Q = A, B = g, console.error(l(A, g));
+          Q = A, B = g, console.error(q(A, g));
         } finally {
           R.__wbindgen_free(Q, B, 1);
         }
@@ -51,11 +51,11 @@ function BA() {
         return new Error();
       },
       __wbg_stack_3b0d974bbf31e44f: function(A, g) {
-        const Q = g.stack, B = b(Q, R.__wbindgen_malloc, R.__wbindgen_realloc), D = W;
+        const Q = g.stack, B = b(Q, R.__wbindgen_malloc, R.__wbindgen_realloc), D = p;
         r().setInt32(A + 4, D, true), r().setInt32(A + 0, B, true);
       },
       __wbindgen_cast_0000000000000001: function(A, g) {
-        return l(A, g);
+        return q(A, g);
       },
       __wbindgen_init_externref_table: function() {
         const A = R.__wbindgen_externrefs, g = A.grow(4);
@@ -68,17 +68,17 @@ let H = null;
 function r() {
   return (H === null || H.buffer.detached === true || H.buffer.detached === void 0 && H.buffer !== R.memory.buffer) && (H = new DataView(R.memory.buffer)), H;
 }
-function l(I, A) {
+function q(I, A) {
   return I = I >>> 0, CA(I, A);
 }
-let Z = null;
+let l = null;
 function t() {
-  return (Z === null || Z.byteLength === 0) && (Z = new Uint8Array(R.memory.buffer)), Z;
+  return (l === null || l.byteLength === 0) && (l = new Uint8Array(R.memory.buffer)), l;
 }
 function b(I, A, g) {
   if (g === void 0) {
-    const C = q.encode(I), o = A(C.length, 1) >>> 0;
-    return t().subarray(o, o + C.length).set(C), W = C.length, o;
+    const C = W.encode(I), o = A(C.length, 1) >>> 0;
+    return t().subarray(o, o + C.length).set(C), p = C.length, o;
   }
   let Q = I.length, B = A(Q, 1) >>> 0;
   const D = t();
@@ -90,10 +90,10 @@ function b(I, A, g) {
   }
   if (E !== Q) {
     E !== 0 && (I = I.slice(E)), B = g(B, Q, Q = E + I.length * 3, 1) >>> 0;
-    const C = t().subarray(B + E, B + Q), o = q.encodeInto(I, C);
+    const C = t().subarray(B + E, B + Q), o = W.encodeInto(I, C);
     E += o.written, B = g(B, Q, E, 1) >>> 0;
   }
-  return W = E, B;
+  return p = E, B;
 }
 function P(I) {
   const A = R.__wbindgen_externrefs.get(I);
@@ -106,17 +106,17 @@ let j = 0;
 function CA(I, A) {
   return j += A, j >= QA && (x = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true }), x.decode(), j = A), x.decode(t().subarray(I, I + A));
 }
-const q = new TextEncoder();
-"encodeInto" in q || (q.encodeInto = function(I, A) {
-  const g = q.encode(I);
+const W = new TextEncoder();
+"encodeInto" in W || (W.encodeInto = function(I, A) {
+  const g = W.encode(I);
   return A.set(g), {
     read: I.length,
     written: g.length
   };
 });
-let W = 0, R;
+let p = 0, R;
 function EA(I, A) {
-  return R = I.exports, H = null, Z = null, R.__wbindgen_start(), R;
+  return R = I.exports, H = null, l = null, R.__wbindgen_start(), R;
 }
 async function DA(I, A) {
   if (typeof Response == "function" && I instanceof Response) {
@@ -535,7 +535,7 @@ async function SA(I, A = "document.pdf") {
     }), C.mdp_permissions.p = C.mdp_permission, delete C.mdp_permission) : (C.mdp_permissions && C.mdp_permissions.p, delete C.mdp_permission);
   }), E.doc_mdp_permission !== void 0 && (E.doc_mdp_permissions ? E.doc_mdp_permissions.p = E.doc_mdp_permission : E.doc_mdp_permissions = { p: E.doc_mdp_permission }, delete E.doc_mdp_permission), E;
 }
-function p(I, A, g = "size-17") {
+function L(I, A, g = "size-17") {
   const Q = T[I] || T.signature, B = T[A.toLowerCase()] || T.valid;
   return `
         <div class="sig-icon-container ${g}">
@@ -555,11 +555,18 @@ function cA(I, A, g = {}) {
             <div class="status-bar-loader"></div>
             <span class="status-bar-text">Verifying signatures...</span>
         `;
-  else {
+  else if (g.hasError || !A || !A.document) {
+    D.classList.add("invalid");
+    const E = L("signature", "invalid", "size-17 status-bar-icon");
+    D.innerHTML = `
+            ${E}
+            <span class="status-bar-text" style="font-weight:600">Unable to verify signature.</span>
+        `;
+  } else {
     const E = ((_a = A.document) == null ? void 0 : _a.overall_status) || ((_b = A.document) == null ? void 0 : _b.overallStatus), o = (((_c = A.document) == null ? void 0 : _c.filled_fields_after_last_sig) || ((_d = A.document) == null ? void 0 : _d.filledFieldsAfterLastSig) || []).length > 0;
     let k = "valid", G = "Signed and all signatures are valid.", U = "valid";
     E === "TOTAL_FAILED" ? (k = "invalid", G = "At least one signature is invalid.", U = "invalid") : (E === "WARNING" || o) && (k = "warning", G = o ? "Document modified after signing." : "At least one signature has problems.", U = "warning"), D.classList.add(k);
-    const i = p("signature", U, "size-17 status-bar-icon");
+    const i = L("signature", U, "size-17 status-bar-icon");
     D.innerHTML = `
             ${i}
             <span class="status-bar-text" style="font-weight:600">${G}</span>
@@ -642,7 +649,7 @@ function f(I, A, g, Q, B = false) {
   const E = A.is_latest_revision || A.isLatestRevision, C = A.vri_match !== false && A.vriMatch !== false, o = !E && C, k = A.status || "VALID";
   let G = "valid";
   k === "INVALID" ? G = "invalid" : k === "WARNING" ? G = "warning" : k === "VALID" && (G = "valid");
-  const i = p(B ? "certified" : "signature", G, "size-17"), F = k === "VALID" || o, M = A.signer, c = _((M == null ? void 0 : M.subject) || A.name || `Signature ${g + 1}`), X = A.revision_index || A.revisionIndex || g + 1, w = document.createElement("div");
+  const i = L(B ? "certified" : "signature", G, "size-17"), F = k === "VALID" || o, M = A.signer, c = _((M == null ? void 0 : M.subject) || A.name || `Signature ${g + 1}`), X = A.revision_index || A.revisionIndex || g + 1, w = document.createElement("div");
   w.className = "adobe-sig-header", w.innerHTML = `
         <div class="sig-header-main">
             ${i}
@@ -674,8 +681,8 @@ function f(I, A, g, Q, B = false) {
   const a = ((_a = A.details) == null ? void 0 : _a.mdp_permissions) || ((_b = A.details) == null ? void 0 : _b.mdpPermissions);
   if (a) {
     if (a.type === "FieldMDP" || a.is_locked || a.isLocked) {
-      const h = a.action || "Include", L = a.fields || [];
-      h === "All" ? S = "This signature locks all form fields in the document." : h === "Include" && L.length > 0 ? S = `This signature locks the following form fields: ${L.join(", ")}.` : h === "Exclude" && L.length > 0 ? S = `This signature locks all form fields except: ${L.join(", ")}.` : (a.is_locked || a.isLocked) && (S = "This signature locks specified form fields.");
+      const h = a.action || "Include", Z = a.fields || [];
+      h === "All" ? S = "This signature locks all form fields in the document." : h === "Include" && Z.length > 0 ? S = `This signature locks the following form fields: ${Z.join(", ")}.` : h === "Exclude" && Z.length > 0 ? S = `This signature locks all form fields except: ${Z.join(", ")}.` : (a.is_locked || a.isLocked) && (S = "This signature locks specified form fields.");
     } else if (a.type === "DocMDP") {
       const h = a.p;
       h != null && (S = `P=${h}`);
@@ -728,7 +735,7 @@ function RA(I, A, g, Q) {
   const D = A.revision_index || A.revisionIndex || g + 1, E = ((_b = (_a = A.tsa) == null ? void 0 : _a.subject) == null ? void 0 : _b.split(",")[0].replace("CN=", "")) || "Time Stamping Authority", C = A.status || "VALID";
   let o = "valid";
   C === "INVALID" ? o = "invalid" : C === "WARNING" && (o = "warning");
-  const k = p("timestamp", o, "size-17"), G = document.createElement("div");
+  const k = L("timestamp", o, "size-17"), G = document.createElement("div");
   G.className = "adobe-sig-header", G.innerHTML = `
         <div class="sig-header-main">
             ${k}
@@ -822,7 +829,7 @@ function e(I, A) {
                         ${a}${y}
                     </div>`;
     }), c += "</div>", G === "summary") {
-      const w = ((_b2 = (_a2 = I.signer) == null ? void 0 : _a2.trust) == null ? void 0 : _b2.isTrusted) === true, N = I.is_certification === true || I.isCertification === true, S = p(N ? "certified" : "signature", w ? "valid" : "warning", "size-22");
+      const w = ((_b2 = (_a2 = I.signer) == null ? void 0 : _a2.trust) == null ? void 0 : _b2.isTrusted) === true, N = I.is_certification === true || I.isCertification === true, S = L(N ? "certified" : "signature", w ? "valid" : "warning", "size-22");
       c += `
                 <div class="cert-status-box ${w ? "cert-status-valid" : "cert-status-warning"}">
                     ${S}
@@ -879,7 +886,7 @@ ${v(w.name, w.value)}`).join(`
                         <div class="detail-text">No revocation information found for this certificate in the document.</div>
                     `;
     } else if (G === "trust") {
-      const w = ((_d2 = (_c2 = I.signer) == null ? void 0 : _c2.trust) == null ? void 0 : _d2.isTrusted) === true, N = I.is_certification === true || I.isCertification === true, S = p(N ? "certified" : "signature", w ? "valid" : "warning", "size-22");
+      const w = ((_d2 = (_c2 = I.signer) == null ? void 0 : _c2.trust) == null ? void 0 : _d2.isTrusted) === true, N = I.is_certification === true || I.isCertification === true, S = L(N ? "certified" : "signature", w ? "valid" : "warning", "size-22");
       c += `
                 <div class="cert-status-box ${w ? "cert-status-valid" : "cert-status-warning"}" style="margin-bottom:15px">
                     ${S}

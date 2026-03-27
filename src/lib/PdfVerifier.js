@@ -504,6 +504,13 @@ export function renderTopStatusBar(container, data, options = {}) {
             <div class="status-bar-loader"></div>
             <span class="status-bar-text">Verifying signatures...</span>
         `;
+    } else if (options.hasError || !data || !data.document) {
+        bar.classList.add('invalid');
+        const iconHtml = getIconOverlayHtml("signature", "invalid", "size-17 status-bar-icon");
+        bar.innerHTML = `
+            ${iconHtml}
+            <span class="status-bar-text" style="font-weight:600">Unable to verify signature.</span>
+        `;
     } else {
         const overallStatus = data.document?.overall_status || data.document?.overallStatus;
         const postSigChanges = data.document?.filled_fields_after_last_sig || data.document?.filledFieldsAfterLastSig || [];
