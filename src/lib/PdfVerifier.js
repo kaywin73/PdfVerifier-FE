@@ -927,7 +927,7 @@ function renderTimestampItem(parent, ts, index, reportData) {
     content.appendChild(clickableStatus);
 
     // Certificate Details Link for Timestamp
-    if (ts.tsa?.certificateChain) {
+    if (ts.tsa?.certificate_chain || ts.tsa?.certificateChain) {
         const certLink = document.createElement('a');
         certLink.className = 'cert-link';
         certLink.textContent = 'Certificate Details...';
@@ -952,17 +952,20 @@ function showCertificateModal(sig, reportData) {
     overlay.className = 'adobe-modal-overlay';
     
     // Certificate Resolution Logic
-    const chainEntries = sig.signer?.certificateChain || [];
+    const chainEntries = sig.signer?.certificate_chain || sig.signer?.certificateChain || [];
     const pool = reportData.globalPool || reportData.document?.dss_global_pool?.certificates || reportData.document?.dssGlobalPool?.certificates || [];
     
     console.log("Chain Entries:", chainEntries);
     console.log("Resolved Pool:", pool);
 
     const resolveCert = (entry) => {
-        if (entry.encodedX509) return entry;
-        if (entry.certRef) {
-            const found = pool.find(c => c.fingerprint === entry.certRef);
-            console.log(`Resolving ref ${entry.certRef} -> ${found ? 'Found' : 'NOT FOUND'}`);
+        const encoded = entry.encoded_x509 || entry.encodedX509;
+        const ref = entry.cert_ref || entry.certRef;
+        
+        if (encoded) return { ...entry, encodedX509: encoded }; // Normalize for parse_x509
+        if (ref) {
+            const found = pool.find(c => c.fingerprint === ref);
+            console.log(`Resolving ref ${ref} -> ${found ? 'Found' : 'NOT FOUND'}`);
             return found;
         }
         return null;
@@ -1011,7 +1014,8 @@ function showCertificateModal(sig, reportData) {
         
         let parsed;
         try {
-            parsed = JSON.parse(parse_x509(certData.encodedX509));
+            const encoded = certData.encoded_x509 || certData.encodedX509;
+            parsed = JSON.parse(parse_x509(encoded));
         } catch (e) {
             container.innerHTML = `<div style="color:red">Failed to parse certificate: ${e.message}</div>`;
             return;
@@ -1037,7 +1041,7 @@ function showCertificateModal(sig, reportData) {
         html += `</div>`;
 
         if (activeTab === 'summary') {
-            const isTrusted = sig.signer?.trust?.isTrusted === true;
+            const isTrusted = sig.signer?.trust?.is_trusted === true || sig.signer?.trust?.isTrusted === true;
             const isCert = sig.is_certification === true || sig.isCertification === true;
             const statusType = isTrusted ? 'valid' : 'warning';
             const baseType = isCert ? 'certified' : 'signature';
@@ -1125,7 +1129,7 @@ function showCertificateModal(sig, reportData) {
             } else if (activeTab === 'trust') {
     // ... (rest of renderActiveTab logic)
     // At the end of renderActiveTab, we need to wire up the buttons.
-            const isTrusted = sig.signer?.trust?.isTrusted === true;
+            const isTrusted = sig.signer?.trust?.is_trusted === true || sig.signer?.trust?.isTrusted === true;
             const isCert = sig.is_certification === true || sig.isCertification === true;
             const statusType = isTrusted ? 'valid' : 'warning';
             const baseType = isCert ? 'certified' : 'signature';
@@ -1138,9 +1142,9 @@ function showCertificateModal(sig, reportData) {
                         <strong>Trust Information</strong>
                         <div style="font-size:11.5px; margin-top:4px">
                             ${isTrusted 
-                                ? (sig.signer?.trust?.type === 'BUILT-IN' || sig.trustSourceType === 'BUILT-IN'
-                                    ? `Source of Trust obtained from ${sig.signer?.trust?.source || sig.trustSourceName || 'Adobe Approved Trust List (AATL)'}.`
-                                    : `The certificate is trusted and has been verified against ${sig.signer?.trust?.source || sig.trustSourceName || 'your trust list'}.`)
+                                ? (sig.signer?.trust?.type === 'BUILT-IN' || sig.trust_source_type === 'BUILT-IN' || sig.trustSourceType === 'BUILT-IN'
+                                    ? `Source of Trust obtained from ${sig.signer?.trust?.source || sig.trust_source_name || sig.trustSourceName || 'Adobe Approved Trust List (AATL)'}.`
+                                    : `The certificate is trusted and has been verified against ${sig.signer?.trust?.source || sig.trust_source_name || sig.trustSourceName || 'your trust list'}.`)
                                 : 'The certificate is not trusted. The identity of the signer could not be verified.'}
                         </div>
                     </div>
@@ -1151,8 +1155,8 @@ function showCertificateModal(sig, reportData) {
                 <div class="sig-detail-row" style="margin-top:20px">
                     <div class="detail-label">Trust Details:</div>
                     <div class="detail-text">
-                        The trust level was determined using the <strong>${sig.signer?.trust?.source || sig.trustSourceName || 'Default'}</strong> policy.
-                        ${(sig.signer?.trust?.type || sig.trustSourceType) ? `<br/><span style="font-size:10px; opacity:0.7">Source Type: ${sig.signer?.trust?.type || sig.trustSourceType}</span>` : ''}
+                        The trust level was determined using the <strong>${sig.signer?.trust?.source || sig.trust_source_name || sig.trustSourceName || 'Default'}</strong> policy.
+                        ${(sig.signer?.trust?.type || sig.trust_source_type || sig.trustSourceType) ? `<br/><span style="font-size:10px; opacity:0.7">Source Type: ${sig.signer?.trust?.type || sig.trust_source_type || sig.trustSourceType}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1368,7 +1372,7 @@ function showRevocationSignerModal(signerName, encodedCert, reportData) {
     showCertificateModal({ 
         signer: { 
             subject: signerName, 
-            certificateChain: [{ encodedX509: encodedCert, subject: signerName }] 
+            certificate_chain: [{ encoded_x509: encodedCert, subject: signerName }] 
         } 
     }, reportData);
 }
