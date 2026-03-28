@@ -203,6 +203,14 @@ fn oid_to_friendly_name(oid: &str) -> String {
         "1.2.840.10045.2.1" => "ECC (Elliptic Curve Cryptography)".to_string(),
         "1.2.840.10045.4.3.2" => "ECDSA with SHA256".to_string(),
         "1.2.840.113549.1.1.10" => "RSASSA-PSS".to_string(),
+        "2.16.840.1.101.3.4.3.17" => "ML-DSA-44".to_string(),
+        "2.16.840.1.101.3.4.3.18" => "ML-DSA-65".to_string(),
+        "2.16.840.1.101.3.4.3.19" => "ML-DSA-87".to_string(),
+        "2.15.840.1.101.3.4.3.24" => "SLH-DSA-SHA2-128s".to_string(),
+        "2.15.840.1.101.3.4.3.25" => "SLH-DSA-SHA2-128f".to_string(),
+        "2.16.840.1.101.3.4.3.36" => "ML-DSA-44 with RSA-2048-PSS (Composite)".to_string(),
+        "2.16.840.1.101.3.4.3.37" => "ML-DSA-65 with RSA-3072-PSS (Composite)".to_string(),
+        "2.16.840.1.101.3.4.3.38" => "ML-DSA-87 with RSA-4096-PSS (Composite)".to_string(),
         "2.5.29.15" => "Key Usage".to_string(),
         "2.5.29.37" => "Extended Key Usage".to_string(),
         "2.5.29.19" => "Basic Constraints".to_string(),
@@ -256,12 +264,25 @@ pub fn parse_x509(cert_base64: String) -> Result<String, JsValue> {
         } else {
             pk_raw.len() * 4 // Fallback for compressed or other
         }
+    } else if algorithm_oid == "1.2.840.113549.1.1.1" {
+        // RSA: pk_raw is DER-encoded RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
+        let mut bits = pk_raw.len() * 8;
+        if let Ok((_, any)) = asn1_rs::Any::from_der(pk_raw) {
+            if let Ok(seq) = any.as_sequence() {
+                // In asn1-rs, Sequence.content is the raw bytes of the elements.
+                // We parse the first element (the modulus) from these bytes.
+                if let Ok((_, modulus_any)) = asn1_rs::Any::from_der(&seq.content) {
+                    let mut m = modulus_any.data;
+                    // DER integers are signed; positive integers with MSB set have a leading 0x00 byte.
+                    while m.starts_with(&[0]) && m.len() > 1 {
+                        m = &m[1..];
+                    }
+                    bits = m.len() * 8;
+                }
+            }
+        }
+        bits
     } else if algorithm_oid.starts_with("1.2.840.113549.1.1.") {
-        // RSA: Heuristic - subject_public_key.data is a DER-encoded RSAPublicKey (Sequence of N, E)
-        // A simple bit length check of the data is usually close enough if we subtract overhead,
-        // but for better accuracy we can just show the byte length * 8 of the raw data if it's not ECC.
-        // Actually, for RSA 2048, the raw data is ~270 bytes. 270 * 8 = 2160.
-        // Let's at least fix the ECC one which was the main complaint.
         pk_raw.len() * 8
     } else {
         pk_raw.len() * 8
@@ -354,23 +375,77 @@ pub fn parse_x509(cert_base64: String) -> Result<String, JsValue> {
     serde_json::to_string(&parsed).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct VerificationResult {
+    pub is_verified: bool,
+    pub error_message: Option<String>,
+    pub report: Option<serde_json::Value>,
+}
+
 #[wasm_bindgen]
-pub fn verify_token_report(token_report: String, signature_base64: String) -> Result<bool, JsValue> {
+pub fn verify_signed_report(full_jwt: String, ptr: *const u8, len: usize) -> Result<String, JsValue> {
     use p256::ecdsa::{VerifyingKey, Signature, signature::Verifier};
     use p256::pkcs8::DecodePublicKey;
+    use base64::{engine::general_purpose, Engine as _};
     
+    let parts: Vec<&str> = full_jwt.split('.').collect();
+    if parts.len() != 3 {
+        return Ok(serde_json::to_string(&VerificationResult {
+            is_verified: false,
+            error_message: Some("Invalid token format. Missing segments.".to_string()),
+            report: None,
+        }).unwrap());
+    }
+
     let verifying_key = VerifyingKey::from_public_key_pem(PUBLIC_KEY)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse public key: {}", e)))?;
     
-    let sig_bytes = general_purpose::STANDARD.decode(signature_base64.trim())
+    let message = format!("{}.{}", parts[0], parts[1]);
+    let signature_bytes = general_purpose::URL_SAFE_NO_PAD.decode(parts[2].trim())
         .map_err(|e| JsValue::from_str(&format!("Failed to decode signature: {}", e)))?;
     
-    let signature = Signature::from_der(&sig_bytes)
-        .or_else(|_| Signature::try_from(sig_bytes.as_slice()))
+    let signature = Signature::from_der(&signature_bytes)
+        .or_else(|_| Signature::try_from(signature_bytes.as_slice()))
         .map_err(|e| JsValue::from_str(&format!("Invalid signature format: {}", e)))?;
     
-    match verifying_key.verify(token_report.as_bytes(), &signature) {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
+    // 1. Verify JWT Signature
+    if let Err(_) = verifying_key.verify(message.as_bytes(), &signature) {
+        return Ok(serde_json::to_string(&VerificationResult {
+            is_verified: false,
+            error_message: Some("Backend signature verification failed.".to_string()),
+            report: None,
+        }).unwrap());
     }
+
+    // 2. Decode the payload
+    let payload_bytes = general_purpose::URL_SAFE_NO_PAD.decode(parts[1])
+        .map_err(|e| JsValue::from_str(&format!("Failed to decode payload: {}", e)))?;
+    
+    let payload: serde_json::Value = serde_json::from_slice(&payload_bytes)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse JSON payload: {}", e)))?;
+
+    let report = payload.get("report").ok_or_else(|| JsValue::from_str("Missing report claim in token"))?;
+    
+    let report_hash_base64 = report.get("pdf_hash_base64")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsValue::from_str("Missing pdf_hash_base64 in report"))?;
+
+    // 3. Re-calculate hash and compare
+    let data = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let actual_hash = hashing::calculate_sha256(data);
+    let actual_hash_base64 = general_purpose::STANDARD.encode(&actual_hash);
+
+    if actual_hash_base64 != report_hash_base64 {
+        return Ok(serde_json::to_string(&VerificationResult {
+            is_verified: false,
+            error_message: Some("File hash mismatch. The report does not belong to this document.".to_string()),
+            report: None,
+        }).unwrap());
+    }
+
+    Ok(serde_json::to_string(&VerificationResult {
+        is_verified: true,
+        error_message: None,
+        report: Some(report.clone()),
+    }).unwrap())
 }

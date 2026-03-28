@@ -1,4 +1,4 @@
-import init, { parse_pdf, alloc_memory, free_memory, parse_x509 } from '../../pkg/pdfverifier_fe.js';
+import init, { parse_pdf, alloc_memory, free_memory, parse_x509, verify_signed_report } from '../../pkg/pdfverifier_fe.js';
 import { ICONS } from './icons.js';
 
 export const VERSION = "1.0.0";
@@ -315,6 +315,7 @@ const STYLES = `
     display: inline-block;
     flex-shrink: 0;
 }
+.sig-icon-container.size-14 { width: 14px; height: 14px; margin-right: 8px; }
 .sig-icon-container.size-17 { width: 17px; height: 17px; margin-right: 10px; }
 .sig-icon-container.size-19 { width: 19px; height: 19px; margin-right: 10px; }
 .sig-icon-container.size-22 { width: 22px; height: 22px; margin-right: 12px; }
@@ -465,6 +466,32 @@ export async function verifyPdf(arrayBuffer, filename = "document.pdf") {
     }
 
     return result;
+}
+
+/**
+ * Verifies a signed report (JWT) against the original file content.
+ */
+export async function verifySignedReport(jwt, arrayBuffer) {
+    if (!wasmReady) await initPdfVerifier();
+
+    const fileLen = arrayBuffer.byteLength;
+    const uint8Array = new Uint8Array(arrayBuffer);
+    let resultJson;
+    let ptr = null;
+
+    try {
+        ptr = alloc_memory(fileLen);
+        const wasmMemory = new Uint8Array(wasmModule.memory.buffer);
+        wasmMemory.set(uint8Array, ptr);
+        
+        resultJson = verify_signed_report(jwt, ptr, fileLen);
+    } finally {
+        if (ptr !== null) {
+            free_memory(ptr, fileLen);
+        }
+    }
+
+    return JSON.parse(resultJson);
 }
 
 function getIconOverlayHtml(type, status, sizeClass = "size-17") {
@@ -953,40 +980,70 @@ function showCertificateModal(sig, reportData) {
     
     // Certificate Resolution Logic
     const chainEntries = sig.signer?.certificate_chain || sig.signer?.certificateChain || [];
-    const pool = reportData.globalPool || reportData.document?.dss_global_pool?.certificates || reportData.document?.dssGlobalPool?.certificates || [];
+    const pool = reportData.globalPool || reportData.global_pool || reportData.document?.dss_global_pool?.certificates || reportData.document?.dssGlobalPool?.certificates || [];
     
     console.log("Chain Entries:", chainEntries);
     console.log("Resolved Pool:", pool);
 
     const resolveCert = (entry) => {
-        const encoded = entry.encoded_x509 || entry.encodedX509;
-        const ref = entry.cert_ref || entry.certRef;
+        const fp = (typeof entry === 'string') ? entry : (entry.cert_ref || entry.certRef);
         
-        if (encoded) return { ...entry, encodedX509: encoded }; // Normalize for parse_x509
-        if (ref) {
-            const found = pool.find(c => c.fingerprint === ref);
-            console.log(`Resolving ref ${ref} -> ${found ? 'Found' : 'NOT FOUND'}`);
+        if (fp) {
+            let found = null;
+            if (Array.isArray(pool)) {
+                found = pool.find(c => c.fingerprint && c.fingerprint.toUpperCase() === fp.toUpperCase());
+            } else if (typeof pool === 'object' && pool !== null) {
+                // Try direct key access first
+                found = pool[fp] || pool[fp.toUpperCase()] || pool[fp.toLowerCase()];
+                if (!found) {
+                    const key = Object.keys(pool).find(k => k.toUpperCase() === fp.toUpperCase());
+                    if (key) found = pool[key];
+                }
+            }
+            
+            if (found && (found.encoded_x509 || found.encodedX509)) {
+                return { ...found, encodedX509: found.encoded_x509 || found.encodedX509 };
+            }
             return found;
         }
+
+        const encoded = entry.encoded_x509 || entry.encodedX509;
+        if (encoded) return { ...entry, encodedX509: encoded };
+
         return null;
     };
     
     const chain = chainEntries.map(resolveCert).filter(c => c && c.encodedX509);
     console.log("Final Resolved Chain:", chain);
     
-    if (chain.length === 0) {
-        alert("Certificate chain not available in report. (Check console for debug info)");
-        return;
-    }
-
     const modal = document.createElement('div');
     modal.className = 'adobe-modal';
+    
+    if (chain.length === 0) {
+        modal.innerHTML = `
+            <div class="modal-header">
+                <span class="modal-title">Certificate Viewer</span>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-content" style="padding: 40px; text-align: center; color: #666;">
+                <div style="font-size: 48px; margin-bottom: 20px;">📜</div>
+                <div style="font-size: 18px; font-weight: 500; color: #333; margin-bottom: 10px;">Certificate Details Not Available</div>
+                <div>The certificate chain for this signature was not found in the report.</div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.appendChild(modal);
+        modal.querySelector('.modal-close').onclick = () => overlay.remove();
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        return;
+    }
     
     modal.innerHTML = `
         <div class="modal-header">
             <span class="modal-title">Certificate Viewer</span>
             <span class="modal-close">&times;</span>
         </div>
+        <div id="certTreeContainer" style="padding: 16px 16px 0 16px; border-bottom: 1px solid var(--pdf-border-color);"></div>
         <div class="modal-tabs">
             <div class="modal-tab active" data-tab="summary">Summary</div>
             <div class="modal-tab" data-tab="details">Details</div>
@@ -995,18 +1052,43 @@ function showCertificateModal(sig, reportData) {
             <div class="modal-tab" data-tab="policies">Policies</div>
         </div>
         <div class="modal-content" id="certModalContent"></div>
-        <div class="modal-footer">
-            <button class="adobe-btn adobe-btn-primary" id="closeBtn">Close</button>
-        </div>
+        <div class="modal-footer" style="padding: 0; border: none; height: 0; min-height: 0; overflow: hidden;"></div>
     `;
 
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     modal.querySelector('.modal-close').onclick = () => overlay.remove();
-    modal.querySelector('#closeBtn').onclick = () => overlay.remove();
 
     const tabs = modal.querySelectorAll('.modal-tab');
     let selectedCertIndex = 0;
     let activeTab = 'summary';
+
+    function renderCertTree() {
+        const treeContainer = modal.querySelector('#certTreeContainer');
+        let treeHtml = `<div class="cert-tree" style="margin-bottom: 12px">`;
+        const reversedChain = [...chain].reverse();
+        reversedChain.forEach((c, i) => {
+            const originalIdx = chain.length - 1 - i;
+            const name = getCN(c.subject) || (originalIdx === 0 ? "Signer" : (originalIdx === chain.length - 1 ? "Root" : "Intermediate"));
+            const padding = 12 + (i * 18);
+            const symbol = i > 0 ? '<span style="opacity:0.5; margin-right:6px">└─</span>' : '';
+            
+            treeHtml += `<div class="cert-tree-item ${originalIdx === selectedCertIndex ? 'active' : ''}" 
+                          data-idx="${originalIdx}" 
+                          style="padding-left: ${padding}px; border-bottom: none">
+                        ${symbol}${name}
+                    </div>`;
+        });
+        treeHtml += `</div>`;
+        treeContainer.innerHTML = treeHtml;
+
+        treeContainer.querySelectorAll('.cert-tree-item').forEach(item => {
+            item.onclick = () => {
+                selectedCertIndex = parseInt(item.dataset.idx);
+                renderCertTree();
+                renderActiveTab();
+            };
+        });
+    }
 
     function renderActiveTab() {
         const certData = chain[selectedCertIndex];
@@ -1017,31 +1099,16 @@ function showCertificateModal(sig, reportData) {
             const encoded = certData.encoded_x509 || certData.encodedX509;
             parsed = JSON.parse(parse_x509(encoded));
         } catch (e) {
-            container.innerHTML = `<div style="color:red">Failed to parse certificate: ${e.message}</div>`;
+            console.error("X509 parse error:", e);
+            container.innerHTML = `<div style="color:red">Failed to parse certificate: ${e.message || e}</div>`;
             return;
         }
 
         let html = '';
         
-        // Path Tree (Always at top) - Root at top
-        html += `<div class="cert-tree">`;
-        const reversedChain = [...chain].reverse();
-        reversedChain.forEach((c, i) => {
-            const originalIdx = chain.length - 1 - i;
-            const name = getCN(c.subject) || (originalIdx === 0 ? "Signer" : (originalIdx === chain.length - 1 ? "Root" : "Intermediate"));
-            const padding = 12 + (i * 18);
-            const symbol = i > 0 ? '<span style="opacity:0.5; margin-right:6px">└─</span>' : '';
-            
-            html += `<div class="cert-tree-item ${originalIdx === selectedCertIndex ? 'active' : ''}" 
-                          data-idx="${originalIdx}" 
-                          style="padding-left: ${padding}px">
-                        ${symbol}${name}
-                    </div>`;
-        });
-        html += `</div>`;
-
         if (activeTab === 'summary') {
-            const isTrusted = sig.signer?.trust?.is_trusted === true || sig.signer?.trust?.isTrusted === true;
+            const trust = certData.trust || sig.signer?.trust;
+            const isTrusted = trust?.is_trusted === true || trust?.isTrusted === true;
             const isCert = sig.is_certification === true || sig.isCertification === true;
             const statusType = isTrusted ? 'valid' : 'warning';
             const baseType = isCert ? 'certified' : 'signature';
@@ -1113,8 +1180,9 @@ function showCertificateModal(sig, reportData) {
                             </div>
                             <button class="adobe-btn adobe-btn-outline revocation-signer-btn" 
                                 style="margin-top:12px; font-size:11px" 
-                                data-signer="${rev.signer}" data-cert="${rev.signer_cert || rev.signerCert}"
-                                ${isRoot ? 'disabled title="This is a root certificate"' : ''}>
+                                data-signer="${rev.signer}" 
+                                data-cert="${rev.signer_cert || rev.signerCert || ''}"
+                                data-trust='${JSON.stringify(rev.trust || rev.trust || {})}'>
                                 Signer Details...
                             </button>
                         </div>
@@ -1129,9 +1197,8 @@ function showCertificateModal(sig, reportData) {
                     `;
                 }
             } else if (activeTab === 'trust') {
-    // ... (rest of renderActiveTab logic)
-    // At the end of renderActiveTab, we need to wire up the buttons.
-            const isTrusted = sig.signer?.trust?.is_trusted === true || sig.signer?.trust?.isTrusted === true;
+            const trust = certData.trust || sig.signer?.trust;
+            const isTrusted = trust?.is_trusted === true || trust?.isTrusted === true;
             const isCert = sig.is_certification === true || sig.isCertification === true;
             const statusType = isTrusted ? 'valid' : 'warning';
             const baseType = isCert ? 'certified' : 'signature';
@@ -1144,9 +1211,9 @@ function showCertificateModal(sig, reportData) {
                         <strong>Trust Information</strong>
                         <div style="font-size:11.5px; margin-top:4px">
                             ${isTrusted 
-                                ? (sig.signer?.trust?.type === 'BUILT-IN' || sig.trust_source_type === 'BUILT-IN' || sig.trustSourceType === 'BUILT-IN'
-                                    ? `Source of Trust obtained from ${sig.signer?.trust?.source || sig.trust_source_name || sig.trustSourceName || 'Adobe Approved Trust List (AATL)'}.`
-                                    : `The certificate is trusted and has been verified against ${sig.signer?.trust?.source || sig.trust_source_name || sig.trustSourceName || 'your trust list'}.`)
+                                ? (trust?.type === 'BUILT-IN' || sig.trust_source_type === 'BUILT-IN' || sig.trustSourceType === 'BUILT-IN'
+                                    ? `Source of Trust obtained from ${trust?.source || sig.trust_source_name || sig.trustSourceName || 'Adobe Approved Trust List (AATL)'}.`
+                                    : `The certificate is trusted and has been verified against ${trust?.source || sig.trust_source_name || sig.trustSourceName || 'your trust list'}.`)
                                 : 'The certificate is not trusted. The identity of the signer could not be verified.'}
                         </div>
                     </div>
@@ -1157,8 +1224,8 @@ function showCertificateModal(sig, reportData) {
                 <div class="sig-detail-row" style="margin-top:20px">
                     <div class="detail-label">Trust Details:</div>
                     <div class="detail-text">
-                        The trust level was determined using the <strong>${sig.signer?.trust?.source || sig.trust_source_name || sig.trustSourceName || 'Default'}</strong> policy.
-                        ${(sig.signer?.trust?.type || sig.trust_source_type || sig.trustSourceType) ? `<br/><span style="font-size:10px; opacity:0.7">Source Type: ${sig.signer?.trust?.type || sig.trust_source_type || sig.trustSourceType}</span>` : ''}
+                        The trust level was determined using the <strong>${trust?.source || sig.trust_source_name || sig.trustSourceName || 'Default'}</strong> policy.
+                        ${(trust?.type || sig.trust_source_type || sig.trustSourceType) ? `<br/><span style="font-size:10px; opacity:0.7">Source Type: ${trust?.type || sig.trust_source_type || sig.trustSourceType}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1190,7 +1257,9 @@ function showCertificateModal(sig, reportData) {
         container.querySelectorAll('.revocation-signer-btn').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
-                showRevocationSignerModal(btn.dataset.signer, btn.dataset.cert, reportData);
+                let trust = {};
+                try { trust = JSON.parse(btn.dataset.trust || '{}'); } catch(e) {}
+                showRevocationSignerModal(btn.dataset.signer, btn.dataset.cert, reportData, trust);
             };
         });
     }
@@ -1206,6 +1275,7 @@ function showCertificateModal(sig, reportData) {
 
     document.body.appendChild(overlay);
     overlay.appendChild(modal);
+    renderCertTree();
     renderActiveTab();
 }
 
@@ -1333,14 +1403,11 @@ function showSignatureDetailsModal(sig, reportData) {
                 </div>
             ` : ''}
         </div>
-        <div class="modal-footer">
-            <button class="adobe-btn adobe-btn-primary" id="closeBtn">Close</button>
-        </div>
+        <div class="modal-footer" style="padding: 0; border: none; height: 0; min-height: 0; overflow: hidden;"></div>
     `;
 
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     modal.querySelector('.modal-close').onclick = () => overlay.remove();
-    modal.querySelector('#closeBtn').onclick = () => overlay.remove();
     
     const tsaCertBtn = modal.querySelector('#tsaCertBtn');
     if (tsaCertBtn) {
@@ -1370,11 +1437,24 @@ function showSignatureDetailsModal(sig, reportData) {
     overlay.appendChild(modal);
 }
 
-function showRevocationSignerModal(signerName, encodedCert, reportData) {
+function showRevocationSignerModal(signerName, encodedCert, reportData, trustData = {}) {
+    if (!encodedCert || encodedCert === "undefined" || encodedCert === "null") {
+        alert("The revocation signer certificate is not embedded in this document.");
+        return;
+    }
+
+    // Logic to determine if it's a fingerprint (64 hex chars) or full base64
+    const isFingerprint = /^[0-9A-Fa-f]{64}$/.test(encodedCert);
+    
     showCertificateModal({ 
         signer: { 
             subject: signerName, 
-            certificate_chain: [{ encoded_x509: encodedCert, subject: signerName }] 
+            trust: trustData,
+            certificate_chain: [
+                isFingerprint 
+                    ? { cert_ref: encodedCert, subject: signerName }
+                    : { encoded_x509: encodedCert, subject: signerName }
+            ] 
         } 
     }, reportData);
 }
