@@ -38,6 +38,14 @@ pub struct DssData {
     pub certs: Vec<Vec<u8>>,
     pub ocsps: Vec<Vec<u8>>,
     pub crls: Vec<Vec<u8>>,
+    pub vri: std::collections::BTreeMap<String, VriData>,
+}
+
+#[derive(Debug)]
+pub struct VriData {
+    pub certs: Vec<Vec<u8>>,
+    pub ocsps: Vec<Vec<u8>>,
+    pub crls: Vec<Vec<u8>>,
 }
 
 pub struct ExtractionResult {
@@ -49,7 +57,8 @@ pub struct ExtractionResult {
 }
 
 pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn std::error::Error>> {
-    let doc = Document::load_mem(raw_bytes).map_err(|e| format!("PDF parse error: {:?}", e))?;
+    let mut doc = Document::load_mem(raw_bytes).map_err(|e| format!("PDF parse error: {:?}", e))?;
+    doc.decompress();
     let mut signatures = Vec::new();
 
     let dss = extract_dss(&doc);
@@ -375,8 +384,9 @@ fn extract_dss(doc: &Document) -> Option<DssData> {
     let mut certs = Vec::new();
     let mut ocsps = Vec::new();
     let mut crls = Vec::new();
+    let mut vri = std::collections::BTreeMap::new();
 
-    if let Ok(Object::Array(certs_array)) = dss_dict.get(b"Certs") {
+    if let Some(certs_array) = dss_dict.get(b"Certs").ok().and_then(|obj| resolve_array(doc, obj)) {
         for obj_ref in certs_array {
             if let Some(stream_bytes) = get_stream_bytes(doc, obj_ref) {
                 certs.push(stream_bytes);
@@ -384,7 +394,7 @@ fn extract_dss(doc: &Document) -> Option<DssData> {
         }
     }
 
-    if let Ok(Object::Array(ocsps_array)) = dss_dict.get(b"OCSPs") {
+    if let Some(ocsps_array) = dss_dict.get(b"OCSPs").ok().and_then(|obj| resolve_array(doc, obj)) {
         for obj_ref in ocsps_array {
             if let Some(stream_bytes) = get_stream_bytes(doc, obj_ref) {
                 ocsps.push(stream_bytes);
@@ -392,7 +402,7 @@ fn extract_dss(doc: &Document) -> Option<DssData> {
         }
     }
 
-    if let Ok(Object::Array(crls_array)) = dss_dict.get(b"CRLs") {
+    if let Some(crls_array) = dss_dict.get(b"CRLs").ok().and_then(|obj| resolve_array(doc, obj)) {
         for obj_ref in crls_array {
             if let Some(stream_bytes) = get_stream_bytes(doc, obj_ref) {
                 crls.push(stream_bytes);
@@ -400,17 +410,87 @@ fn extract_dss(doc: &Document) -> Option<DssData> {
         }
     }
 
-    if certs.is_empty() && ocsps.is_empty() && crls.is_empty() {
+    if let Some(vri_dict) = dss_dict.get(b"VRI").ok().and_then(|obj| resolve_dict(doc, obj)) {
+        for (key, val) in vri_dict {
+            let key_str = String::from_utf8_lossy(key).into_owned();
+            if let Some(vri_data) = extract_vri_entry(doc, val) {
+                vri.insert(key_str, vri_data);
+            }
+        }
+    }
+
+    if certs.is_empty() && ocsps.is_empty() && crls.is_empty() && vri.is_empty() {
         None
     } else {
-        Some(DssData { certs, ocsps, crls })
+        Some(DssData { certs, ocsps, crls, vri })
     }
 }
 
+fn resolve_dict<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary> {
+    match obj {
+        Object::Dictionary(d) => Some(d),
+        Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| o.as_dict().ok()),
+        _ => None,
+    }
+}
+
+fn resolve_array<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Vec<Object>> {
+    match obj {
+        Object::Array(a) => Some(a),
+        Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| o.as_array().ok()),
+        _ => None,
+    }
+}
+
+fn extract_vri_entry(doc: &Document, obj: &Object) -> Option<VriData> {
+    let dict = match obj {
+        Object::Dictionary(d) => d,
+        Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| o.as_dict().ok())?,
+        _ => return None,
+    };
+
+    let mut certs = Vec::new();
+    let mut ocsps = Vec::new();
+    let mut crls = Vec::new();
+
+    if let Some(arr) = dict.get(b"Cert").ok().and_then(|obj| resolve_array(doc, obj)) {
+        for item in arr {
+            if let Some(bytes) = get_stream_bytes(doc, item) {
+                certs.push(bytes);
+            }
+        }
+    }
+
+    if let Some(arr) = dict.get(b"OCSP").ok().and_then(|obj| resolve_array(doc, obj)) {
+        for item in arr {
+            if let Some(bytes) = get_stream_bytes(doc, item) {
+                ocsps.push(bytes);
+            }
+        }
+    }
+
+    if let Some(arr) = dict.get(b"CRL").ok().and_then(|obj| resolve_array(doc, obj)) {
+        for item in arr {
+            if let Some(bytes) = get_stream_bytes(doc, item) {
+                crls.push(bytes);
+            }
+        }
+    }
+
+    Some(VriData { certs, ocsps, crls })
+}
+
 fn get_stream_bytes(doc: &Document, obj: &Object) -> Option<Vec<u8>> {
-    let reference = obj.as_reference().ok()?;
-    let stream = doc.get_object(reference).ok()?.as_stream().ok()?;
-    Some(stream.content.clone())
+    let resolved = match obj {
+        Object::Reference(id) => doc.get_object(*id).ok()?,
+        _ => obj,
+    };
+
+    match resolved {
+        Object::Stream(s) => Some(s.content.clone()),
+        Object::String(s, _) => Some(s.clone()),
+        _ => None,
+    }
 }
 
 fn extract_mdp_permission(doc: &Document, sig_dict: &Dictionary) -> Option<i32> {

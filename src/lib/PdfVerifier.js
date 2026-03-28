@@ -1096,15 +1096,17 @@ function showCertificateModal(sig, reportData) {
                         ? ` on ${thisUpdate}${validitySuffix}` 
                         : (validitySuffix ? ` valid until ${nextUpdate}` : '');
 
-                    const byteLoc = rev.byte_location || rev.byteLocation;
+                    const rawLoc = rev.byte_location || rev.byteLocation || "";
+                    const bl = String(rawLoc).trim().toUpperCase();
                     const isRoot = rev.is_root || rev.isRoot;
+                    const locText = (bl === 'DSS-GLOBAL' || bl === 'DSS') ? 'embedded DSS storage' : (bl === 'DSS-VRI' ? 'embedded VRI dictionary' : (bl === 'CMS' ? 'embedded in CMS' : (bl === 'LIVE' ? 'live network' : 'local cache')));
 
                     html += `
                         <div class="revocation-item">
                             <div class="detail-text" style="margin-bottom:10px">
                                 The selected certificate is considered valid because it does not appear in the 
                                 <strong>${type === 'CRL' ? 'Certificate Revocation List (CRL)' : 'OCSP Response'}</strong> 
-                                that is contained in the ${byteLoc === 'DSS' ? 'embedded DSS storage' : (byteLoc === 'CMS' ? 'embedded in CMS' : 'local cache')}.
+                                that is contained in the ${locText}.
                             </div>
                             <div class="detail-subtext">
                                 The ${type} was signed by <strong>"${signerName}"</strong>${dateLine}.

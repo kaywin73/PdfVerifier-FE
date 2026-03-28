@@ -44,10 +44,18 @@ pub struct SignerPayload {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct VriPayload {
+    pub certs: Vec<String>,
+    pub ocsps: Vec<String>,
+    pub crls: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct DssPayload {
     pub certs: Vec<String>,
     pub ocsps: Vec<String>,
     pub crls: Vec<String>,
+    pub vri: std::collections::BTreeMap<String, VriPayload>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,6 +102,13 @@ pub fn parse_pdf(ptr: *const u8, len: usize, filename: String) -> Result<String,
         certs: dss.certs.iter().map(|c| general_purpose::STANDARD.encode(c)).collect(),
         ocsps: dss.ocsps.iter().map(|o| general_purpose::STANDARD.encode(o)).collect(),
         crls: dss.crls.iter().map(|c| general_purpose::STANDARD.encode(c)).collect(),
+        vri: dss.vri.iter().map(|(key, data)| {
+            (key.clone(), VriPayload {
+                certs: data.certs.iter().map(|c| general_purpose::STANDARD.encode(c)).collect(),
+                ocsps: data.ocsps.iter().map(|o| general_purpose::STANDARD.encode(o)).collect(),
+                crls: data.crls.iter().map(|c| general_purpose::STANDARD.encode(c)).collect(),
+            })
+        }).collect(),
     });
 
     let mut request_payload = VerifyRequest {
