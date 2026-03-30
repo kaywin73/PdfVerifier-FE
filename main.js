@@ -54,13 +54,40 @@ async function processFile(file) {
             .filter(s => s.cms_bytes_base64 || s.cmsBytesBase64);
         
         if (signers.length === 0) {
-            // Not a signed PDF - hide the status bar
             statusBarContainer.classList.add('hidden');
             statusBarContainer.innerHTML = ''; 
             return;
         }
 
-        // 3. Show "Verifying" status bar and ensure it's visible
+        // 3. Check for Legacy (non-PAdES) signatures before hitting backend
+        const hasPades = signers.some(s => {
+            const sf = s.sub_filter || s.subFilter || "";
+            return sf.includes("ETSI") || sf === "adbe.pkcs7.detached";
+        });
+
+        if (!hasPades) {
+            statusBarContainer.classList.remove('hidden');
+            renderTopStatusBar(statusBarContainer, {
+                document: { pades_level: null },
+                signatures: signers
+            }, {
+                onOpenPanel: () => {
+                    renderSignaturePanel(signaturePanelContainer, {
+                        document: { pades_level: null, fileName: file.name },
+                        signatures: signers.map((s, i) => ({
+                            ...s,
+                            index: i + 1,
+                            status: "UNKNOWN",
+                            validation: { status: "FAILED", findings: [{ code: "LEGACY_SIGNATURE", message: "Legacy signature type is not supported for full verification." }] }
+                        }))
+                    });
+                    signatureDrawer.classList.add('open');
+                }
+            });
+            return;
+        }
+
+        // 4. Show "Verifying" status bar for PAdES signatures
         statusBarContainer.classList.remove('hidden');
         renderTopStatusBar(statusBarContainer, null, { isVerifying: true });
 

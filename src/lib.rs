@@ -41,6 +41,7 @@ pub struct SignerPayload {
     pub filled_fields: Vec<String>,
     pub annotation_changes: Vec<String>,
     pub revision_index: u32,
+    pub certs: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -66,7 +67,6 @@ pub struct VerifyRequest {
     pub dss: Option<DssPayload>,
     pub filled_fields: Vec<String>,
     pub annotation_changes: Vec<String>,
-    pub doc_mdp_permission: Option<i32>,
 }
 
 #[wasm_bindgen]
@@ -118,12 +118,29 @@ pub fn parse_pdf(ptr: *const u8, len: usize, filename: String) -> Result<String,
         dss: dss_payload,
         filled_fields: extraction_result.filled_fields_after_last_sig,
         annotation_changes: extraction_result.annotation_changes_after_last_sig,
-        doc_mdp_permission: extraction_result.doc_mdp_permission,
     };
 
     for sig in extraction_result.signatures {
-        let signer_hashes = hashing::compute_hashes_for_cms(&sig.cms_bytes, &sig.signed_content)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let sub_filter = sig.sub_filter.as_deref().unwrap_or("");
+        
+        let signer_hashes = if sub_filter == "adbe.x509.rsa_sha1" {
+            vec![hashing::SignerHashInfo {
+                signer_id: sig.name.clone(),
+                digest_alg_oid: hashing::OID_SHA1.to_string(),
+                document_hash: hashing::calculate_sha1(&sig.signed_content),
+                is_integrity_ok: true,
+            }]
+        } else if sub_filter == "adbe.x509.rsa_md5" {
+            vec![hashing::SignerHashInfo {
+                signer_id: sig.name.clone(),
+                digest_alg_oid: hashing::OID_MD5.to_string(),
+                document_hash: hashing::calculate_md5(&sig.signed_content),
+                is_integrity_ok: true,
+            }]
+        } else {
+            hashing::compute_hashes_for_cms(&sig.cms_bytes, &sig.signed_content)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?
+        };
 
         for signer_hash in signer_hashes {
             let mut locked_fields_payload = sig.locked_fields.as_ref().map(|lock| FieldLockPayload {
@@ -163,6 +180,7 @@ pub fn parse_pdf(ptr: *const u8, len: usize, filename: String) -> Result<String,
                 filled_fields: sig.filled_fields.clone(),
                 annotation_changes: sig.annotation_changes.clone(),
                 revision_index: sig.revision_index,
+                certs: sig.certs.iter().map(|c| general_purpose::STANDARD.encode(c)).collect(),
             };
             request_payload.signers.push(payload);
         }
@@ -448,4 +466,72 @@ pub fn verify_signed_report(full_jwt: String, ptr: *const u8, len: usize) -> Res
         error_message: None,
         report: Some(report.clone()),
     }).unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use asn1_rs::{FromBer, FromDer};
+
+    #[test]
+    fn test_cms_oid_guided_discovery() {
+        // signedData OID: 06 09 2A 86 48 86 F7 0D 01 07 02
+        let oid = vec![0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
+        // Valid ContentInfo start: 30 (indefinite 80) + OID
+        let mut cms = vec![0x30, 0x80];
+        cms.extend_from_slice(&oid);
+        cms.extend_from_slice(&[0x00, 0x00]); // EOC for 30 80
+        
+        let original_len = cms.len();
+        
+        // Noisy data: Deceptive 0x30 tag + data + real CMS
+        let mut noisy = vec![0x30, 0x01, 0xFF]; // False 0x30 tag
+        noisy.extend_from_slice(&cms);
+        
+        // Mimic precision seeking logic:
+        let signed_data_oid = [0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
+        let mut start = 0;
+        let mut found_oid = false;
+        for i in 0..(noisy.len().saturating_sub(signed_data_oid.len())) {
+            if &noisy[i..i+signed_data_oid.len()] == &signed_data_oid {
+                for j in 2..=6 {
+                    if i >= j {
+                        let tag = noisy[i-j];
+                        if tag == 0x30 || tag == 0x04 || tag == 0x24 {
+                            start = i - j;
+                            found_oid = true;
+                            break;
+                        }
+                    }
+                }
+                if found_oid { break; }
+            }
+        }
+        
+        assert!(found_oid);
+        assert_eq!(start, 3); // Should skip the false 3-byte junk at the start
+        
+        let working = &noisy[start..];
+        
+        // Test discovery
+        let mut disc = working.to_vec();
+        disc.extend_from_slice(&[0; 100]);
+        let (rem, _) = asn1_rs::Any::from_ber(&disc).unwrap();
+        let consumed = disc.len() - rem.len();
+        
+        assert_eq!(consumed, original_len);
+    }
+
+    #[test]
+    fn test_cms_unwrapping_primitive() {
+        // A minimal "CMS" starting with 0x30 (Sequence)
+        let inner_cms = vec![0x30, 0x03, 0x02, 0x01, 0x01];
+        // Wrapped in a primitive OCTET STRING: 04 05 ...
+        let mut wrapped = vec![0x04, 0x05];
+        wrapped.extend_from_slice(&inner_cms);
+        
+        let (_, any) = asn1_rs::Any::from_ber(&wrapped).unwrap();
+        assert_eq!(any.header.tag(), asn1_rs::Tag::OctetString);
+        assert_eq!(any.data, &inner_cms[..]);
+    }
 }

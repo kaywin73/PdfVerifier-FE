@@ -5,6 +5,21 @@ export const VERSION = "1.0.0";
 let wasmReady = false;
 let wasmModule = null;
 
+export const SUPPORTED_SUB_FILTERS = ['ETSI.CAdES.detached', 'ETSI.RFC3161'];
+export const LEGACY_MESSAGE = "Legacy (non-PAdES) signatures are not supported";
+
+export function isLegacyReport(data) {
+    if (!data) return false;
+    const signatures = data.signatures || data.signers || [];
+    if (signatures.length === 0) return false;
+    
+    return signatures.some(sig => {
+        const subFilter = (sig.details?.sub_filter || sig.details?.subFilter || sig.sub_filter || sig.subFilter || "").trim();
+        if (!subFilter) return true; // Missing subfilter is considered legacy/unsupported PAdES
+        return !SUPPORTED_SUB_FILTERS.map(f => f.toLowerCase()).includes(subFilter.toLowerCase());
+    });
+}
+
 let currentConfig = {
     theme: 'light',
     statusBarBgColor: null,
@@ -85,15 +100,31 @@ function applyThemeStyles() {
     root.style.setProperty('--pdf-icon-filter', isDark ? 'invert(1)' : 'none');
 }
 
-function formatAdobeDate(isoString) {
-    if (!isoString || isoString === 'Unknown') return isoString;
-    if (isoString.includes(':') && (isoString.includes('MYT') || isoString.includes('GMT') || isoString.includes('BST') || isoString.split(' ').length > 4)) {
-        return isoString;
-    }
-    try {
-        const date = new Date(isoString);
-        return date.toString();
-    } catch (e) { return isoString; }
+function formatAdobeDate(val) {
+    if (!val || val === 'Unknown') return val;
+    
+    // Handle numeric epoch timestamps from backend
+    const date = new Date(typeof val === 'string' ? (isNaN(val) ? val : parseInt(val)) : val);
+    
+    if (isNaN(date.getTime())) return val;
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    
+    // RFC 822 time zone offset format (e.g. +0800)
+    const offset = date.getTimezoneOffset();
+    const offsetSign = offset <= 0 ? '+' : '-';
+    const absOffset = Math.abs(offset);
+    const offsetHours = String(Math.floor(absOffset / 60)).padStart(2, '0');
+    const offsetMinutes = String(absOffset % 60).padStart(2, '0');
+    const timezone = `${offsetSign}${offsetHours}${offsetMinutes}`;
+
+    return `${day} ${month} ${year} ${hours}:${minutes}:${seconds} ${timezone}`;
 }
 
 function getCN(dn) {
@@ -379,6 +410,24 @@ const STYLES = `
     scrollbar-width: thin;
     scrollbar-color: var(--pdf-scrollbar-thumb) transparent;
 }
+.ltv-badge {
+    display: inline-flex;
+    align-items: center;
+    background: #4a90e2;
+    color: white;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+}
+.ltv-badge.disabled {
+    background: var(--pdf-border-color);
+    color: var(--pdf-text-muted);
+}
 `;
 
 function injectStyles() {
@@ -428,42 +477,37 @@ export async function verifyPdf(arrayBuffer, filename = "document.pdf") {
     const result = JSON.parse(resultJson);
     
     // Unify MDP fields: move singular mdp_permission (int) into plural mdp_permissions (object)
-    if (result.signers) {
-        result.signers.forEach(signer => {
+    if (result.signers && result.signers.length > 0) {
+        result.signers.forEach((signer, index) => {
             if (signer.mdp_permission !== undefined && signer.mdp_permission !== null) {
                 if (!signer.mdp_permissions) {
                     signer.mdp_permissions = {
-                        type: "Standard",
+                        type: index === 0 ? "DocMDP" : "FieldMDP",
                         is_locked: false,
                         action: "None",
-                        fields: []
+                        fields: [],
+                        p: signer.mdp_permission
                     };
+                } else if (signer.mdp_permissions.p === undefined) {
+                    signer.mdp_permissions.p = signer.mdp_permission;
                 }
-                signer.mdp_permissions.p = signer.mdp_permission;
-                delete signer.mdp_permission;
-            } else if (signer.mdp_permissions && signer.mdp_permissions.p === undefined) {
-                // If it's plural but has no P, and singular is missing, leave it as is 
-                // but usually the WASM provides both.
-                delete signer.mdp_permission;
-            } else {
                 delete signer.mdp_permission;
             }
-
-            // Keep fields separate as intended:
-            // 1. filled_fields = fields actually modified in this revision
-            // 2. mdp_permissions.fields = fields protected/excluded by the MDP dictionary in the PDF
-            // They are NOT the same and should not be merged.
         });
+
+        // Special case: If WASM found a root-level DocMDP but it's not attached to the first signer
+        const rootMdp = result.doc_mdp_permissions || (result.doc_mdp_permission !== undefined ? { p: result.doc_mdp_permission } : null);
+        if (rootMdp && !result.signers[0].mdp_permissions) {
+            result.signers[0].mdp_permissions = {
+                ...rootMdp,
+                type: "DocMDP"
+            };
+        }
     }
 
-    if (result.doc_mdp_permission !== undefined) {
-        if (!result.doc_mdp_permissions) {
-            result.doc_mdp_permissions = { p: result.doc_mdp_permission };
-        } else {
-            result.doc_mdp_permissions.p = result.doc_mdp_permission;
-        }
-        delete result.doc_mdp_permission;
-    }
+    // Clean up root-level fields to enforce per-signature model
+    delete result.doc_mdp_permission;
+    delete result.doc_mdp_permissions;
 
     return result;
 }
@@ -539,7 +583,7 @@ export function renderTopStatusBar(container, data, options = {}) {
             <span class="status-bar-text" style="font-weight:600">Unable to verify signature.</span>
         `;
     } else {
-        const signatures = data.signatures || [];
+        const signatures = data.signatures || data.signers || [];
         if (signatures.length === 0) {
             container.innerHTML = '';
             return;
@@ -549,16 +593,17 @@ export function renderTopStatusBar(container, data, options = {}) {
         const postSigChanges = data.document?.filled_fields_after_last_sig || data.document?.filledFieldsAfterLastSig || [];
         const hasPostSigChanges = postSigChanges.length > 0;
         
+        const isLegacy = isLegacyReport(data);
+        
         let statusClass = "valid";
         let statusText = "Signed and all signatures are valid.";
         let statusType = "valid";
 
-        if (signatures.length === 0) {
-            container.innerHTML = '';
-            return;
-        }
-
-        if (overallStatus === "TOTAL_FAILED") {
+        if (isLegacy) {
+            statusClass = "warning";
+            statusText = LEGACY_MESSAGE;
+            statusType = "warning";
+        } else if (overallStatus === "TOTAL_FAILED") {
             statusClass = "invalid";
             statusText = "At least one signature is invalid.";
             statusType = "invalid";
@@ -580,7 +625,7 @@ export function renderTopStatusBar(container, data, options = {}) {
         bar.innerHTML = `
             ${iconHtml}
             <span class="status-bar-text" style="font-weight:600">${statusText}</span>
-            <button class="view-sigs-btn">View Signatures</button>
+            ${!isLegacy ? '<button class="view-sigs-btn">View Signatures</button>' : ''}
         `;
         
         const btn = bar.querySelector('.view-sigs-btn');
@@ -724,15 +769,19 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
 
     const signerObj = sig.signer;
     const signerName = getCN(signerObj?.subject || sig.name || `Signature ${index + 1}`);
-    const revNum = sig.revision_index || sig.revisionIndex || (index + 1);
+    const sigDetails = sig.details || {};
+    const revNum = sig.revision_index || sig.revisionIndex || sigDetails.revision_index || sigDetails.revisionIndex || (index + 1);
+    const subFilter = (sigDetails.sub_filter || sigDetails.subFilter || sig.sub_filter || sig.subFilter || "").trim();
+    const isLegacy = !subFilter || !SUPPORTED_SUB_FILTERS.map(f => f.toLowerCase()).includes(subFilter.toLowerCase());
+    const hasLtv = sig.is_ltv_enabled || sig.isLtvEnabled || sigDetails.is_ltv_enabled || sigDetails.isLtvEnabled;
 
     const header = document.createElement('div');
     header.className = 'adobe-sig-header';
     header.innerHTML = `
         <div class="sig-header-main">
-            ${iconHtml}
+            ${getIconOverlayHtml(baseType, isLegacy ? "warning" : statusType, "size-17")}
             <div class="sig-header-text">
-                <span class="sig-title">Rev. ${revNum}: ${isCert ? 'Certified' : 'Signed'} by ${signerName}</span>
+                <span class="sig-title">Rev. ${revNum}: ${isCert ? 'Certified' : 'Signed'} by ${signerName}${hasLtv ? '<span class="ltv-badge" title="Long Term Validation (LTV) Enabled">LTV</span>' : ''}</span>
                 ${sig.name ? `<div class="sig-field-name">Signature Field: ${sig.name}</div>` : ''}
             </div>
         </div>
@@ -747,10 +796,12 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
     // isLatest and vriMatch are now declared at the top for logic consistency
 
     let integrityText = isLatest
-        ? "Document has not been modified since this signature was applied." 
+        ? "This revision of the document has not been altered." 
         : "This revision of the document has not been altered. There have been subsequent changes to the document.";
     
-    if (status === "UNKNOWN") {
+    if (status === "INVALID") {
+        integrityText = "Signature is invalid and document may have been tampered with.";
+    } else if (status === "UNKNOWN") {
         integrityText = "Signature uses an unsupported algorithm or has a cryptographic mismatch.";
     } else if (!vriMatch) {
         integrityText = "Document HAS been modified in an unauthorized way since this signature was applied.";
@@ -765,11 +816,13 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
 
     clickableStatus.innerHTML = `
         <div class="sig-detail-row">
-            <span class="detail-label clickable-label">${isValid ? 'Signature is valid.' : 'Signature has problems.'}</span>
+            <span class="detail-label clickable-label">${isLegacy ? LEGACY_MESSAGE : (isValid ? 'Signature is valid.' : 'Signature has problems.')}</span>
         </div>
-        <div class="sig-detail-row">
-            <span class="detail-text clickable-text">${integrityText}</span>
-        </div>
+        ${!isLegacy ? `
+            <div class="sig-detail-row">
+                <span class="detail-text clickable-text">${integrityText}</span>
+            </div>
+        ` : ''}
     `;
     content.appendChild(clickableStatus);
 
@@ -825,7 +878,13 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
         const ts = sig.signature_timestamp || sig.signatureTimestamp;
         time = ts.time || time;
         const tsaName = ts.tsa_name || ts.tsaName || ts.tsa?.subject?.split(',')[0].replace('CN=', '') || "Unknown TSA";
-        timeSource = `The signing time is from the clock of the Time Stamping Authority: ${tsaName}.`;
+        const tsTrusted = ts.validation?.trust?.is_trusted === true || ts.validation?.trust?.isTrusted === true;
+        
+        if (!tsTrusted) {
+            timeSource = `Untrusted signing time from Time Stamping Authority: ${tsaName}.`;
+        } else {
+            timeSource = `The signing time is from the clock of the Time Stamping Authority: ${tsaName}.`;
+        }
     } else if (sig.details?.claimed_signing_time || sig.details?.claimedSigningTime) {
         timeSource = "The signing time is from the clock of the signer's computer.";
     }
@@ -834,8 +893,7 @@ function renderSignatureItem(parent, sig, index, reportData, isCert = false) {
         const timeRow = document.createElement('div');
         timeRow.className = 'sig-detail-row';
         timeRow.innerHTML = `
-            <span class="detail-label">Signing time:</span>
-            <div class="detail-text">${time}</div>
+            <div class="detail-text">${formatAdobeDate(time)}</div>
             ${timeSource ? `<div class="detail-subtext">${timeSource}</div>` : ''}
         `;
         content.appendChild(timeRow);
@@ -948,7 +1006,7 @@ function renderTimestampItem(parent, ts, index, reportData) {
     };
     clickableStatus.innerHTML = `
         <span class="detail-label clickable-label">Timestamp time:</span>
-        <div class="detail-text clickable-text">${ts.time}</div>
+        <div class="detail-text clickable-text">${formatAdobeDate(ts.time)}</div>
         <div class="detail-subtext clickable-text">The time is from the clock of the Time Stamping Authority: ${tsaName}.</div>
     `;
     content.appendChild(clickableStatus);
@@ -1089,7 +1147,6 @@ function showCertificateModal(sig, reportData) {
             };
         });
     }
-
     function renderActiveTab() {
         const certData = chain[selectedCertIndex];
         const container = modal.querySelector('#certModalContent');
@@ -1156,10 +1213,10 @@ function showCertificateModal(sig, reportData) {
                 revInfo.forEach(rev => {
                     const type = rev.type || "Unknown";
                     const signerName = rev.signer || "Unknown Signer";
-                    const thisUpdate = rev.this_update || rev.thisUpdate || "";
-                    const nextUpdate = rev.next_update || rev.nextUpdate || "";
-                    const validitySuffix = (nextUpdate && nextUpdate !== 'Unknown') ? ` and is valid until ${nextUpdate}` : '';
-                    const dateLine = (thisUpdate && thisUpdate !== 'Unknown') 
+                    const thisUpdate = formatAdobeDate(rev.this_update || rev.thisUpdate || "");
+                    const nextUpdate = formatAdobeDate(rev.next_update || rev.nextUpdate || "");
+                    const validitySuffix = (nextUpdate && nextUpdate !== 'N/A' && nextUpdate !== 'Unknown') ? ` and is valid until ${nextUpdate}` : '';
+                    const dateLine = (thisUpdate && thisUpdate !== 'N/A' && thisUpdate !== 'Unknown') 
                         ? ` on ${thisUpdate}${validitySuffix}` 
                         : (validitySuffix ? ` valid until ${nextUpdate}` : '');
 
@@ -1361,7 +1418,7 @@ function showSignatureDetailsModal(sig, reportData) {
                 ${(sig.status === "UNKNOWN")
                     ? 'This signature uses an unsupported algorithm or has a cryptographic mismatch.'
                     : ((sig.status === "VALID" || sig.status === "WARNING" || sig.validity === true || (sig.vri_match !== false && sig.vriMatch !== false && (sig.is_latest_revision === false || sig.isLatestRevision === false))) 
-                        ? 'This signature is valid and the document has not been tampered with.' 
+                        ? 'Signature is valid.' 
                         : 'This signature has problems or is invalid.')}
             </div>
 
@@ -1376,9 +1433,9 @@ function showSignatureDetailsModal(sig, reportData) {
             
             <div class="cert-prop-grid">
                 <span class="cert-prop-label">Signature Type:</span><span class="cert-prop-value">${sig.signature_type || sig.signatureType || 'PAdES'}</span>
-                ${(sig.signature_type !== 'TSA' && sig.signatureType !== 'TSA') ? `<span class="cert-prop-label">PAdES Level:</span><span class="cert-prop-value">${sig.pades_level || sig.padesLevel || sig.level || 'B-B'}</span>` : ''}
-                <span class="cert-prop-label">Digest Algo:</span><span class="cert-prop-value">${details.message_digest_algo || details.messageDigestAlgo || 'SHA-256'}</span>
-                <span class="cert-prop-label">Signature Algo:</span><span class="cert-prop-value">${details.signature_algo || details.signatureAlgo || 'RSA'}</span>
+                ${(sig.signature_type !== 'TSA' && sig.signatureType !== 'TSA') ? `<span class="cert-prop-label">PAdES Level:</span><span class="cert-prop-value">${sig.pades_level || sig.padesLevel || sig.level || reportData.document?.pades_level || reportData.document?.padesLevel || 'B-B'}${sig.is_ltv_enabled || sig.isLtvEnabled ? ' <span class="ltv-badge">LTV</span>' : ''}</span>` : ''}
+                <span class="cert-prop-label">Digest Algo:</span><span class="cert-prop-value">${details.hash_algorithm?.name || details.message_digest_algo || details.messageDigestAlgo || 'SHA-256'}${details.hash_algorithm?.oid ? ` (${details.hash_algorithm.oid})` : ''}</span>
+                <span class="cert-prop-label">Signature Algo:</span><span class="cert-prop-value">${details.signature_algorithm?.name || details.signature_algo || details.signatureAlgo || 'RSA'}${details.signature_algorithm?.oid ? ` (${details.signature_algorithm.oid})` : ''}</span>
             </div>
 
             ${(sig.signatureTimestamp || sig.signature_timestamp) ? `

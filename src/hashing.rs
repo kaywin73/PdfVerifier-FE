@@ -1,5 +1,6 @@
 use cms::content_info::ContentInfo;
 use cms::signed_data::{SignedData, SignerIdentifier};
+use asn1_rs::{FromBer, FromDer};
 use der::{Decode, Encode};
 use sha2::{Sha224, Sha256, Sha384, Sha512, Digest};
 use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512, Shake128, Shake256, digest::{Update, ExtendableOutput, XofReader}};
@@ -31,23 +32,90 @@ pub struct SignerHashInfo {
 pub fn compute_hashes_for_cms(cms_bytes: &[u8], signed_content: &[u8]) -> Result<Vec<SignerHashInfo>, Box<dyn std::error::Error>> {
     let mut results = Vec::new();
 
-    // PDF signature Contents are often padded with trailing null bytes.
-    let mut end = cms_bytes.len();
-    while end > 0 && cms_bytes[end - 1] == 0 {
-        end -= 1;
-    }
-    let trimmed_cms_bytes = &cms_bytes[..end];
+    // 1. Cleanup and Discovery phase:
+    // Precision Seek: Scan for CMS OIDs (1.2.840.113549.1.7.x)
+    // 1.2.840.113549.1.7.2 (signedData) = 06 09 2A 86 48 86 F7 0D 01 07 02
+    // 1.2.840.113549.1.7.1 (data) = 06 09 2A 86 48 86 F7 0D 01 07 01
+    let signed_data_oid = [0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
+    let data_oid = [0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
+    let mut start = 0;
+    let mut found_oid = false;
     
-    // Debug info
-    eprintln!("CMS bytes length: {}, Trimmed: {}", cms_bytes.len(), trimmed_cms_bytes.len());
+    for i in 0..(cms_bytes.len().saturating_sub(11)) {
+        if &cms_bytes[i..i+11] == &signed_data_oid || &cms_bytes[i..i+11] == &data_oid {
+            // Found OID. Look back for the preceding SEQUENCE (0x30) or OCTET STRING (0x04/0x24) tag.
+            for j in 2..=12 {
+                if i >= j {
+                    let tag = cms_bytes[i-j];
+                    if tag == 0x30 || tag == 0x04 || tag == 0x24 {
+                        start = i - j;
+                        found_oid = true;
+                        break;
+                    }
+                }
+            }
+            if found_oid { break; }
+        }
+    }
 
-    let content_info = if let Ok(ci) = ContentInfo::from_der(trimmed_cms_bytes) {
+    if !found_oid {
+        // Fallback: Aggressively seek the first valid ASN.1 start tag
+        start = 0;
+        while start < cms_bytes.len() && 
+              cms_bytes[start] != 0x30 && 
+              cms_bytes[start] != 0x04 && 
+              cms_bytes[start] != 0x24 {
+            start += 1;
+        }
+    }
+    
+    if start >= cms_bytes.len() {
+        return Err(format!("No valid ASN.1 start tag (0x30, 0x04, or 0x24) found. Buffer prefix: {:02X?}", 
+                           &cms_bytes[..std::cmp::min(cms_bytes.len(), 32)]).into());
+    }
+
+    let working_bytes = &cms_bytes[start..];
+
+    // Add extreme padding (8192 zeros = 4096 levels of EOC markers) for discovery
+    let mut discover_buffer = working_bytes.to_vec();
+    discover_buffer.extend_from_slice(&[0; 8192]);
+
+    let working_cms = if let Ok((rem, any)) = asn1_rs::Any::from_ber(&discover_buffer) {
+        let consumed = discover_buffer.len() - rem.len();
+        let extent = &discover_buffer[..consumed];
+        
+        if any.header.tag() == asn1_rs::Tag::OctetString {
+            // Unwrapping logic
+            eprintln!("Detected OCTET STRING-wrapped CMS (tag: 0x{:02X}). Unwrapping...", extent[0]);
+            if any.header.is_constructed() {
+                // If constructed, use ber_util fix to flatten it (using 8192-byte padding internally)
+                if let Ok(der) = crate::ber_util::convert_ber_to_der(extent) {
+                    if let Ok((_, der_any)) = asn1_rs::Any::from_der(&der) {
+                        der_any.data.to_vec()
+                    } else {
+                        extent.to_vec()
+                    }
+                } else {
+                    extent.to_vec()
+                }
+            } else {
+                any.data.to_vec()
+            }
+        } else {
+            extent.to_vec()
+        }
+    } else {
+        // Fallback: If discovery failed, use the seeked bytes directly
+        working_bytes.to_vec()
+    };
+
+    let content_info = if let Ok(ci) = ContentInfo::from_der(&working_cms) {
         ci
     } else {
         eprintln!("Initial DER decode failed. Attempting BER-to-DER fallback...");
-        let cms_der_buffer = crate::ber_util::convert_ber_to_der(cms_bytes)?;
+        let cms_der_buffer = crate::ber_util::convert_ber_to_der(&working_cms)?;
         eprintln!("BER-to-DER successful, new length: {}", cms_der_buffer.len());
-        std::fs::write("original_ber.bin", cms_bytes).unwrap_or(());
+        std::fs::write("original_ber.bin", &working_cms).unwrap_or(());
         std::fs::write("converted_der.bin", &cms_der_buffer).unwrap_or(());
         ContentInfo::from_der(&cms_der_buffer)
             .map_err(|e2| format!("ASN.1 DER decode error (after BER conversion): {:?}", e2))?
@@ -208,4 +276,16 @@ fn hash_document(content: &[u8], oid: &str) -> Result<Vec<u8>, Box<dyn std::erro
 }
 pub fn calculate_sha256(content: &[u8]) -> Vec<u8> {
     Sha256::digest(content).to_vec()
+}
+
+pub fn calculate_sha1(data: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha1::new();
+    Digest::update(&mut hasher, data);
+    hasher.finalize().to_vec()
+}
+
+pub fn calculate_md5(data: &[u8]) -> Vec<u8> {
+    let mut hasher = Md5::new();
+    Digest::update(&mut hasher, data);
+    hasher.finalize().to_vec()
 }

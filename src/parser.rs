@@ -18,6 +18,7 @@ pub struct ExtractedSignature {
     pub annotation_changes: Vec<String>,
     pub revision_index: u32,
     pub byte_range_start: usize,
+    pub certs: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +52,6 @@ pub struct VriData {
 pub struct ExtractionResult {
     pub signatures: Vec<ExtractedSignature>,
     pub dss: Option<DssData>,
-    pub doc_mdp_permission: Option<i32>,
     pub filled_fields_after_last_sig: Vec<String>,
     pub annotation_changes_after_last_sig: Vec<String>,
 }
@@ -62,7 +62,6 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
     let mut signatures = Vec::new();
 
     let dss = extract_dss(&doc);
-    let doc_mdp_permission = extract_doc_mdp_permission(&doc);
 
     let mut annot_to_page = std::collections::HashMap::new();
     let pages = doc.get_pages();
@@ -223,7 +222,47 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 }
                             }
 
-                            // 3. Extract modifications (fields and annotations)
+                            // 3. Extract certificates from /Cert
+                            let mut certs = Vec::new();
+                            if let Ok(cert_obj) = dict.get(b"Cert") {
+                                match cert_obj {
+                                    Object::String(s, _) => certs.push(s.clone()),
+                                    Object::Array(arr) => {
+                                        for c in arr {
+                                            match c {
+                                                Object::String(s, _) => certs.push(s.clone()),
+                                                Object::Reference(id) => {
+                                                    if let Ok(Object::String(s, _)) = doc.get_object(*id) {
+                                                        certs.push(s.clone());
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                    Object::Reference(id) => {
+                                        let obj = doc.get_object(*id);
+                                        if let Ok(Object::String(s, _)) = obj {
+                                            certs.push(s.clone());
+                                        } else if let Ok(Object::Array(arr)) = obj {
+                                            for c in arr {
+                                                match c {
+                                                    Object::String(s, _) => certs.push(s.clone()),
+                                                    Object::Reference(rid) => {
+                                                        if let Ok(Object::String(s, _)) = doc.get_object(*rid) {
+                                                            certs.push(s.clone());
+                                                        }
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            // 4. Extract modifications (fields and annotations)
                             let mut filled_fields = Vec::new();
                             let mut annotation_changes = Vec::new();
                             let incremental_end = offset2 + len2;
@@ -314,6 +353,7 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
                                 annotation_changes,
                                 revision_index: 0,
                                 byte_range_start,
+                                certs,
                             });
                         }
                     }
@@ -365,7 +405,6 @@ pub fn extract_signatures(raw_bytes: &[u8]) -> Result<ExtractionResult, Box<dyn 
     Ok(ExtractionResult { 
         signatures, 
         dss, 
-        doc_mdp_permission,
         filled_fields_after_last_sig,
         annotation_changes_after_last_sig
     })
@@ -536,27 +575,7 @@ fn extract_mdp_permission(doc: &Document, sig_dict: &Dictionary) -> Option<i32> 
     None
 }
 
-fn extract_doc_mdp_permission(doc: &Document) -> Option<i32> {
-    let root = doc.catalog().ok()?;
-    
-    // Catalog -> /Perms
-    let perms_obj = root.get(b"Perms").ok()?;
-    let perms_dict = match perms_obj {
-        Object::Dictionary(dict) => Some(dict),
-        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok(),
-        _ => None,
-    }?;
 
-    // Perms -> /DocMDP
-    let doc_mdp_sig_ref = perms_dict.get(b"DocMDP").ok()?;
-    let doc_mdp_sig_dict = match doc_mdp_sig_ref {
-        Object::Dictionary(dict) => Some(dict),
-        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok(),
-        _ => None,
-    }?;
-
-    extract_mdp_permission(doc, doc_mdp_sig_dict)
-}
 
 fn extract_lock_dict(field_dict: &Dictionary) -> Option<FieldLock> {
     if let Ok(Object::Dictionary(lock_dict)) = field_dict.get(b"Lock") {

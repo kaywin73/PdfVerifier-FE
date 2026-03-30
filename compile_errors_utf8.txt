@@ -1,0 +1,56 @@
+﻿cargo :     Checking pdfverifier-fe v0.1.0 
+(C:\Project\PdfVerifier-FE)
+At line:1 char:1
++ cargo check > compile_errors.txt 2>&1; Get-Content 
+compile_errors.txt ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checkin 
+   g pd...PdfVerifier-FE):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+error[E0034]: multiple applicable items in scope
+   --> src\hashing.rs:283:12
+    |
+283 |     hasher.update(data);
+    |            ^^^^^^ multiple `update` found
+    |
+    = note: candidate #1 is defined in an impl of the 
+trait `Update` for the type `CoreWrapper<T>`
+    = note: candidate #2 is defined in an impl of the 
+trait `Digest` for the type `D`
+help: disambiguate the method for candidate #1
+    |
+283 -     hasher.update(data);
+283 +     Update::update(&mut hasher, data);
+    |
+help: disambiguate the method for candidate #2
+    |
+283 -     hasher.update(data);
+283 +     Digest::update(&mut hasher, data);
+    |
+
+error[E0034]: multiple applicable items in scope
+   --> src\hashing.rs:289:12
+    |
+289 |     hasher.update(data);
+    |            ^^^^^^ multiple `update` found
+    |
+    = note: candidate #1 is defined in an impl of the 
+trait `Update` for the type `CoreWrapper<T>`
+    = note: candidate #2 is defined in an impl of the 
+trait `Digest` for the type `D`
+help: disambiguate the method for candidate #1
+    |
+289 -     hasher.update(data);
+289 +     Update::update(&mut hasher, data);
+    |
+help: disambiguate the method for candidate #2
+    |
+289 -     hasher.update(data);
+289 +     Digest::update(&mut hasher, data);
+    |
+
+For more information about this error, try `rustc 
+--explain E0034`.
+error: could not compile `pdfverifier-fe` (lib) due to 2 
+previous errors
